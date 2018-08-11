@@ -1,0 +1,3 @@
+## Home page
+
+It looks a bit empty for now...
