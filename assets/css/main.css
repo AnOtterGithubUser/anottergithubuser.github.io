@@ -3963,3 +3963,11 @@
 		    font-size: 15px;
 		    font-style: italic;
 		}
+
+		p.signature{
+		    font-size: 12px;
+		    font-style: italic;
+		    color: #696969;
+		    text-align: right;
+		    margin-right: 200px;
+		}
