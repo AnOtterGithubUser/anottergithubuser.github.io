@@ -3960,16 +3960,16 @@
 		}
 
 		p.caption {
-		    font-size: 15px;
+		    font-size: 0.8em;
 		    font-style: italic;
 		}
 
 		p.signature{
-		    font-size: 12px;
+		    font-size: 0.8em;
 		    font-style: italic;
 		    color: #696969;
 		    text-align: right;
-		    margin-right: 200px;
+		    margin-right: 12em;
 		}
 
 		html { font-size: 62.5%; }
@@ -3989,4 +3989,17 @@
 
         @media (min-width: 1200px) {
             html { font-size: 120%; }
+        }
+
+        p.article.description{
+            font-size: 0.8em;
+            font-style: italic;
+        }
+
+        img.blogicon{
+            border-radius:10px;
+            vertical-align:top;
+            float:left;
+            margin:0 2em 1em 0;
+            max-width:6em;
         }
