@@ -56,8 +56,35 @@
 					<center><h1>Alphacross, part 1</h1><p>June 17th, 2020</p></center>
 				</header>
                 <h4>Introduction</h4>
+                Since October 2019 I have been working on a side-project with a friend. The aim is to build a web-app on which visitors
+                will be able to play board games against an AI. The idea was to work on Reinforcement Learning and improve our coding skills.<br>
+                We agreed on a few ground rules:
+                <ul style="margin-top:0.5em;margin-bottom:0.5em;">
+                    - We should start on the lowest possible level. That means no high-level libraries like OpenAI Gym or RLCoach.
+                    We would code our own environments and use a standard Deep Learning library. In our case we set on Tensorflow.
+                </ul>
+                <ul>
+                    - We would focus not only on building a software that works but a well-written software. That means testing, continuous
+                    integration and deployment, clear function names and logic, and more testing.
+                </ul>
                 <h4>Building the environment</h4>
+                The first environment would be the classic Connect4 game. The main challenges were to represent the grid and to
+                assess a player's victory. For the first, the grid is represented as a simple list of lists representing the columns.
+                This is way easier for inserting new tokens. The second was a bit more challenging and it was pretty easy to forgot edge
+                cases.<br>
+                However that is when testing intervene. As an afficionado of Software Craftmanship, I developped most of the Connect4 features
+                using <emp>Test Driven Development</emp>. A simple game like this one is actually a great TDD exercise.<br>
+                But Connect4 is not supposed to be the only environment in AlphaCross. Hence I wondered how we could separate the
+                general functions that all future environments will need and the ones specific to Connect4. The answer was to implement an
+                abstract parent class <emp>_Environment</emp>. The idea is that any other class will only interact with an environment through the
+                general <emp>_Environment</emp> methods. In C++, we would simply set all other methods as private. However this does not exist in Python and
+                the general consensus to precede private methods with an <emp>"_"</emp> did not seem strong enough a constraint.<br>
+                These are the public methods for our environments:
+                <br>
+                It shows a lot of similarities with OpenAI Gym library although we did not look at it. This shows that it is a pretty
+                intuitive representation and way to interact with an environment in RL.
                 <h4>Next steps</h4>
+                Build the model
 			</div>
 		</section>
 		<p class="signature">Thomas PESNEAU</p>
