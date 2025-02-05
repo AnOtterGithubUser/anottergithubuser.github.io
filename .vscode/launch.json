@@ -11,8 +11,7 @@
             "args": [
                 "exec",
                 "jekyll",
-                "serve",
-                "--incremental"
+                "serve"
             ]
         }
     ]

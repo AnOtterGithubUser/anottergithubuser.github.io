@@ -18,21 +18,73 @@
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
 
-title: TechPeek
+title: TechAPeek
+subtitle: "A peek into tech"
+author: "Thomas Pesneau"
 email: thomaspesneau@gmail.com
 description: >- # this means to ignore newlines until "baseurl:"
   A peek into tech
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
+repository: AnOtterGithubUser/anottergithubuser.github.io
 github_username:  anottergithubuser
+logo: "assets/images/temp_logo.png"
+
+# Defaults
+author:
+  name: "Thomas Pesneau"
+  avatar: "/assets/images/profile.png"
+  bio: "Technical lead, LLM engineer, data scientist... whichever checks the ATS these days"
+  location: "Melbourne, Victoria"
+  links:
+    - label: "GitHub"
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/anottergithubuser"
+    - label: "Mail"
+      icon: "fa-regular fa-envelope"
+      url: "mailto: thomaspesneau@gmail.com"
+    - label: "LinkedIn"
+      icon: "fa-brands fa-linkedin"
+      url: "https://www.linkedin.com/in/thomas-pesneau-84b772108/"
+footer:
+  links:
+    - label: ""
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/anottergithubuser"
+    - label: ""
+      icon: "fa-brands fa-linkedin"
+      url: "https://www.linkedin.com/in/thomas-pesneau-84b772108/"
+    - label: ""
+      icon: "fa-regular fa-envelope"
+      url: "mailto: thomaspesneau@gmail.com"
+enable_copy_code_button: true
+search: true
+defaults:
+  # posts
+  - scope:
+      path: ""
+      type: posts
+    values:
+      layout: single
+      show_date: true
+      read_time: true
+
 
 # Build settings
 remote_theme: "mmistakes/minimal-mistakes@4.26.2"
-markdown: GFM
+markdown: kramdown
+minimal_mistakes_skin: "default"
+locale: "fr-FR"
 plugins:
   - jekyll-feed
   - jekyll-remote-theme
   - jekyll-include-cache
+  - jekyll-sitemap
+compress_html:
+  clippings: all
+  ignore:
+    envs: development  # disable compression in dev environment
+
 
 # Exclude from processing.
 # The following items will not be processed, by default.
