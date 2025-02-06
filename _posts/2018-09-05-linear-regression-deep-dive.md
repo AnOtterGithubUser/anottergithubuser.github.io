@@ -1,6 +1,7 @@
 ---
 title:  "Linear regression - deep dive"
 date:   2018-09-05 14:43:52 +200
+excerpt: "Linear regression is perhaps the simplest tool in the ML box. Deep dive with me into the math behind this well-known algorithm"
 ---
 In this tutorial we will suppose that we have a matrix of samples $X$ and the corresponding labels $Y$
 and we want to find the coefficients $w$ such that $Y = w^T X$.      
