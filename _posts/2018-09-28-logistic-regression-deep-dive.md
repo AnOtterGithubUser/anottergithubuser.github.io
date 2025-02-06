@@ -2,6 +2,8 @@
 title:  "Logistic regression - deep dive"
 date:   2018-09-28 10:21:54 +200
 excerpt: "Unlike its name suggests, logistic regression is a classification algorithm. It is a very simple algorithm yet extremely robust"
+header:
+  teaser: /assets/images/logreg_icon.png
 ---
 Logistic regression comes from the desire to model the log odds as linear functions. In the example of two classes classification, the model is presented as such:    
         
