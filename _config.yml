@@ -59,6 +59,16 @@ footer:
       url: "mailto: thomaspesneau@gmail.com"
 enable_copy_code_button: true
 search: true
+
+collections:
+  peeks:
+    output: true
+    permalink: /:collection/:path/
+  posts:
+    output: true
+    permalink: /:collection/:path
+
+
 defaults:
   # posts
   - scope:
@@ -68,6 +78,13 @@ defaults:
       layout: single
       show_date: true
       read_time: true
+  # _peeks
+  - scope:
+      path: ""
+      type: peeks
+    values:
+      layout: single
+      show_date: true
 
 
 # Build settings
@@ -84,7 +101,7 @@ compress_html:
   clippings: all
   ignore:
     envs: development  # disable compression in dev environment
-
+include: ["_pages"]
 
 # Exclude from processing.
 # The following items will not be processed, by default.
