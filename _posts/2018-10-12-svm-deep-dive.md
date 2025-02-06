@@ -1,14 +1,18 @@
 ---
 title:  "SVM - deep dive"
 date:   2018-10-12 16:12:23 +200
-excerpt: ""
+excerpt: "Support Vectors Machine has long been the go-to algorithm for machine learning. Deep dive into the remarkable power of this classifier."
+toc: true
+toc_label: SVM
+toc_icon: ""
 ---
+
 ### Introduction
 
 The Support Vector Machine is a large margin classifier i.e we are looking for the hyperplane that separates the data with the largest margin. Which means that for a binary classification problem where $y \in \{-1,1\}$ we want to find $f$ that maximizes $y_i f(x_i)$.     
       
 Historically, it has been the first "kernel method" for pattern recognition. It has a number of advantages (fast, sparse solutions, ...) and is still one of the most popular algorithms in machine learning, often reaching state of the art performance.     
-To understand this demonstration, you need a certain degree of familiarity with linear algebra, reproducing kernel hilbert space, and the representer theorem. I recommend the <a href="http://members.cbio.mines-paristech.fr/~jvert/svn/kernelcourse/slides/master2017/master2017.pdf">course</a> of Jean Philippe VERT which I used extensively for this post.
+To understand this demonstration, you need a certain degree of familiarity with linear algebra, reproducing kernel hilbert space, and the representer theorem. I recommend the [course](http://members.cbio.mines-paristech.fr/~jvert/svn/kernelcourse/slides/master2017/master2017.pdf) of Jean Philippe VERT which I used extensively for this post.
        
 ### Primal formulation
         
@@ -188,4 +192,4 @@ These points are outside the margin. The form of $\hat{f}$ tells us that they do
 
 ### An efficient implementation
 
-Using cvxopt to compute the solution of the dual formulation would work but it would actually be very slow. We have to compute the kernel matrix which is rarely sparse, and the optimisation packages will usually have high memory requirements. The SMO (Sequential Minimal Optimisation) algorithm is a popular decomposition method in this case. It is described in this <a href="http://emilemathieu.fr/blog_svm.html">article</a>. I would recommand reading it and <a href="https://leon.bottou.org/publications/pdf/lin-2006.pdf">Bottou et al.</a> section 6, 7.1, and 7.2 to get the idea.
+Using `cvxopt` to compute the solution of the dual formulation would work but it would actually be very slow. We have to compute the kernel matrix which is rarely sparse, and the optimisation packages will usually have high memory requirements. The SMO (Sequential Minimal Optimisation) algorithm is a popular decomposition method in this case. It is described in this [article](https://emilemathieu.fr/posts/2018/08/svm/). I would recommand reading it and [Bottou et al](https://leon.bottou.org/publications/pdf/lin-2006.pdf) section 6, 7.1, and 7.2 to get the idea.
