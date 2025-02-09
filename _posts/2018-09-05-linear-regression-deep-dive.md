@@ -1,7 +1,8 @@
 ---
 title:  "Linear regression - deep dive"
 date:   2018-09-05 14:43:52 +200
-excerpt: "Linear regression is perhaps the simplest regression tool in the box. Deep dive with me into the math behind this well-known algorithm"
+excerpt: "Linear regression is perhaps the simplest regression tool in the box. Get into the math behind this well-known algorithm"
+category: dive
 header:
   teaser: /assets/images/linreg_icon.png
 ---

@@ -5,6 +5,7 @@ excerpt: "Support Vectors Machine has long been the go-to algorithm for machine 
 toc: true
 toc_label: SVM
 toc_icon: ""
+category: dive
 header:
   teaser: /assets/images/svm_icon.png
 ---

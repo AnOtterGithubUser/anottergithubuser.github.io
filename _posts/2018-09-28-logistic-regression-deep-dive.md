@@ -1,7 +1,8 @@
 ---
 title:  "Logistic regression - deep dive"
 date:   2018-09-28 10:21:54 +200
-excerpt: "Unlike its name suggests, logistic regression is a classification algorithm. It is a very simple algorithm yet extremely robust"
+excerpt: "Unlike its name suggests, logistic regression is a classification algorithm. It is very simple yet extremely robust"
+category: dive
 header:
   teaser: /assets/images/logreg_icon.png
 ---

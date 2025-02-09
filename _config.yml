@@ -68,6 +68,9 @@ collections:
     output: true
     permalink: /:collection/:path
 
+feed:
+  collections:
+    - peeks
 
 defaults:
   # posts
@@ -85,6 +88,7 @@ defaults:
     values:
       layout: single
       show_date: true
+      read_time: true
 
 
 # Build settings
