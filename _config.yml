@@ -64,13 +64,14 @@ collections:
   peeks:
     output: true
     permalink: /:collection/:path/
-  posts:
+  dives:
     output: true
     permalink: /:collection/:path
 
 feed:
   collections:
     - peeks
+    - dives
 
 defaults:
   # posts
@@ -85,6 +86,14 @@ defaults:
   - scope:
       path: ""
       type: peeks
+    values:
+      layout: single
+      show_date: true
+      read_time: true
+  # _dives
+  - scope:
+      path: ""
+      type: dives
     values:
       layout: single
       show_date: true
