@@ -103,7 +103,7 @@ defaults:
 # Build settings
 remote_theme: "mmistakes/minimal-mistakes@4.26.2"
 markdown: kramdown
-minimal_mistakes_skin: "dark"
+minimal_mistakes_skin: "custom"
 locale: "fr-FR"
 plugins:
   - jekyll-feed
