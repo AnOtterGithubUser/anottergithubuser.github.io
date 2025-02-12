@@ -41,10 +41,10 @@ author:
       icon: "fab fa-fw fa-github"
       url: "https://github.com/anottergithubuser"
     - label: "Mail"
-      icon: "fa-regular fa-envelope"
+      icon: "fa-regular fa-fw fa-envelope"
       url: "mailto: thomaspesneau@gmail.com"
     - label: "LinkedIn"
-      icon: "fa-brands fa-linkedin"
+      icon: "fab fa-fw fa-linkedin"
       url: "https://www.linkedin.com/in/thomas-pesneau-84b772108/"
 footer:
   links:
@@ -52,10 +52,10 @@ footer:
       icon: "fab fa-fw fa-github"
       url: "https://github.com/anottergithubuser"
     - label: ""
-      icon: "fa-brands fa-linkedin"
+      icon: "fab fa-fw fa-linkedin"
       url: "https://www.linkedin.com/in/thomas-pesneau-84b772108/"
     - label: ""
-      icon: "fa-regular fa-envelope"
+      icon: "fa-regular fa-fw fa-envelope"
       url: "mailto: thomaspesneau@gmail.com"
 enable_copy_code_button: true
 search: true
