@@ -1,9 +1,9 @@
 ---
-title: Peeks
+title: 
 layout: collection
 permalink: /peeks/
 collection: peeks
-entries_layout: grid
+entries_layout: list
 classes: wide
 ---
 Peeks are simple posts about my current interests
