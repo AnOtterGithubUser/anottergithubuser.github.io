@@ -104,7 +104,7 @@ defaults:
 remote_theme: "mmistakes/minimal-mistakes@4.26.2"
 markdown: kramdown
 minimal_mistakes_skin: "custom"
-locale: "fr-FR"
+locale: "en-AU"
 plugins:
   - jekyll-feed
   - jekyll-remote-theme
