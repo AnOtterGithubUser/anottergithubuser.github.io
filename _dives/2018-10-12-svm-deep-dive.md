@@ -3,8 +3,6 @@ title:  "SVM - deep dive"
 date:   2018-10-12 16:12:23 +200
 excerpt: "Support Vectors Machine has long been the go-to algorithm for machine learning. Deep dive into the remarkable power of this classifier."
 toc: true
-toc_label: SVM
-toc_icon: ""
 category: dive
 header:
   teaser: /assets/images/svm_icon.png
