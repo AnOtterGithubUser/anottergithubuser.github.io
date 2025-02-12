@@ -1,4 +1,137 @@
-theme: jekyll-theme-cayman
-name: TEST
-title: Thomas PESNEAU - Homepage
-description: Yet another data scientist's projects webpage...
+# Welcome to Jekyll!
+#
+# This config file is meant for settings that affect your whole blog, values
+# which you are expected to set up once and rarely edit after that. If you find
+# yourself editing this file very often, consider using Jekyll's data files
+# feature for the data you need to update frequently.
+#
+# For technical reasons, this file is *NOT* reloaded automatically when you use
+# 'bundle exec jekyll serve'. If you change this file, please restart the server process.
+#
+# If you need help with YAML syntax, here are some quick references for you:
+# https://learn-the-web.algonquindesign.ca/topics/markdown-yaml-cheat-sheet/#yaml
+# https://learnxinyminutes.com/docs/yaml/
+#
+# Site settings
+# These are used to personalize your new site. If you look in the HTML files,
+# you will see them accessed via {{ site.title }}, {{ site.email }}, and so on.
+# You can create any custom variable you would like, and they will be accessible
+# in the templates via {{ site.myvariable }}.
+
+title: TechAPeek
+subtitle: "A peek into tech"
+author: "Thomas Pesneau"
+email: thomaspesneau@gmail.com
+description: >- # this means to ignore newlines until "baseurl:"
+  A peek into tech
+baseurl: "" # the subpath of your site, e.g. /blog
+url: "" # the base hostname & protocol for your site, e.g. http://example.com
+repository: AnOtterGithubUser/anottergithubuser.github.io
+github_username:  anottergithubuser
+logo: "assets/images/temp_logo.png"
+
+# Defaults
+author:
+  name: "Thomas Pesneau"
+  avatar: "/assets/images/profile.png"
+  bio: "Technical lead, LLM engineer, data scientist... whichever checks the ATS these days"
+  location: "Melbourne, Victoria"
+  links:
+    - label: "GitHub"
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/anottergithubuser"
+    - label: "Mail"
+      icon: "fa-regular fa-fw fa-envelope"
+      url: "mailto: thomaspesneau@gmail.com"
+    - label: "LinkedIn"
+      icon: "fab fa-fw fa-linkedin"
+      url: "https://www.linkedin.com/in/thomas-pesneau-84b772108/"
+footer:
+  links:
+    - label: ""
+      icon: "fab fa-fw fa-github"
+      url: "https://github.com/anottergithubuser"
+    - label: ""
+      icon: "fab fa-fw fa-linkedin"
+      url: "https://www.linkedin.com/in/thomas-pesneau-84b772108/"
+    - label: ""
+      icon: "fa-regular fa-fw fa-envelope"
+      url: "mailto: thomaspesneau@gmail.com"
+enable_copy_code_button: true
+search: true
+
+collections:
+  peeks:
+    output: true
+    permalink: /:collection/:path/
+  dives:
+    output: true
+    permalink: /:collection/:path
+
+feed:
+  collections:
+    - peeks
+    - dives
+
+defaults:
+  # posts
+  - scope:
+      path: ""
+      type: posts
+    values:
+      layout: single
+      show_date: true
+      read_time: true
+  # _peeks
+  - scope:
+      path: ""
+      type: peeks
+    values:
+      layout: single
+      show_date: true
+      read_time: true
+  # _dives
+  - scope:
+      path: ""
+      type: dives
+    values:
+      layout: single
+      show_date: true
+      read_time: true
+
+
+# Build settings
+remote_theme: "mmistakes/minimal-mistakes@4.26.2"
+markdown: kramdown
+minimal_mistakes_skin: "custom"
+locale: "en-AU"
+plugins:
+  - jekyll-feed
+  - jekyll-remote-theme
+  - jekyll-include-cache
+  - jekyll-sitemap
+compress_html:
+  clippings: all
+  ignore:
+    envs: development  # disable compression in dev environment
+include: ["_pages"]
+
+# Exclude from processing.
+# The following items will not be processed, by default.
+# Any item listed under the `exclude:` key here will be automatically added to
+# the internal "default list".
+#
+# Excluded items can be processed by explicitly listing the directories or
+# their entries' file path in the `include:` list.
+#
+# exclude:
+#   - .sass-cache/
+#   - .jekyll-cache/
+#   - gemfiles/
+#   - Gemfile
+#   - Gemfile.lock
+#   - node_modules/
+#   - vendor/bundle/
+#   - vendor/cache/
+#   - vendor/gems/
+#   - vendor/ruby/

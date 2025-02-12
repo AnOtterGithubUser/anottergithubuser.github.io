@@ -1,0 +1,8 @@
+main:
+  - title: "Peeks"
+    url: /peeks/
+  - title: "Dives"
+    url: /dives/
+  - title: "About me"
+    url: /about
+  
