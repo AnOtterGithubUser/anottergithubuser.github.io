@@ -18,8 +18,7 @@
 # You can create any custom variable you would like, and they will be accessible
 # in the templates via {{ site.myvariable }}.
 
-title: TechAPeek
-subtitle: "A peek into tech"
+title: Otter Peeks
 author: "Thomas Pesneau"
 email: thomaspesneau@gmail.com
 description: >- # this means to ignore newlines until "baseurl:"
@@ -28,7 +27,7 @@ baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 repository: AnOtterGithubUser/anottergithubuser.github.io
 github_username:  anottergithubuser
-logo: "assets/images/temp_logo.png"
+logo: "assets/images/otterpeeks.png"
 
 # Defaults
 author:
