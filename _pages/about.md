@@ -3,7 +3,7 @@ layout: single
 title: 
 permalink: /about/
 author_profile: true
-classes: about
+classes: about wide
 ---
 Hello my name is Thomas -- a freelance data scientist based in Melbourne, Victoria.   
      
