@@ -32,8 +32,8 @@ logo: "assets/images/otterpeeks.png"
 # Defaults
 author:
   name: "Thomas Pesneau"
-  avatar: "/assets/images/profile.png"
-  bio: "Technical lead, LLM engineer, data scientist... whichever checks the ATS these days"
+  avatar: "/assets/images/profile1.jpg"
+  bio: "Technical lead, LLM engineer, data scientist---whichever gets past the ATS these days"
   location: "Melbourne, Victoria"
   links:
     - label: "GitHub"
@@ -62,10 +62,10 @@ search: true
 collections:
   peeks:
     output: true
-    permalink: /:collection/:path/
+    permalink: /:collection/:title/
   dives:
     output: true
-    permalink: /:collection/:path
+    permalink: /:collection/:title/
 
 feed:
   collections:
