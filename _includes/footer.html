@@ -1,3 +1,18 @@
+<script>
+function toggleTheme(){
+  let node1=document.getElementById('theme_source');
+  let node2=document.getElementById('theme_source_2');
+  if(node1.getAttribute('rel')=='stylesheet'){
+    node1.setAttribute('rel', 'stylesheet alternate');
+    node2.setAttribute('rel', 'stylesheet');
+    sessionStorage.setItem('theme', 'dark');
+  } else{
+    node2.setAttribute('rel', 'stylesheet alternate');
+    node1.setAttribute('rel', 'stylesheet');
+    sessionStorage.setItem('theme', 'light');
+  } return false;
+}
+</script>
 <div class="page__footer-follow">
   <ul class="social-icons">
     {% if site.data.ui-text[site.locale].follow_label %}
@@ -18,7 +33,7 @@
 
     {% if site.minimal_mistakes_skin_toggle %}
       <span class="invisible">
-        <li onclick="node1=document.getElementById('theme_source');node2=document.getElementById('theme_source_2');if(node1.getAttribute('rel')=='stylesheet'){node1.setAttribute('rel', 'stylesheet alternate'); node2.setAttribute('rel', 'stylesheet');sessionStorage.setItem('theme', 'dark');}else{node2.setAttribute('rel', 'stylesheet alternate'); node1.setAttribute('rel', 'stylesheet');sessionStorage.setItem('theme', 'light');} return false;"><a><i class="fas fa-fw fa-sun" aria-hidden="true" ></i>THEME</a></li>
+        <li onclick="toggleTheme()"><a><i class="fas fa-fw fa-sun" aria-hidden="true" ></i>THEME</a></li>
       </span>
     {% endif %}
 
