@@ -1,14 +1,14 @@
 <script>
 function updateThemeIcon(){
   const themeIcon = document.getElementById("theme-icon");
-  const theme = sessionStorage.getItem("theme") || "light";
+  const theme = sessionStorage.getItem("theme") || "dark";
 
   if (theme === "dark") {
-    themeIcon.classList.remove("fa-sun");
-    themeIcon.classList.add("fa-moon");
-  } else {
     themeIcon.classList.remove("fa-moon");
     themeIcon.classList.add("fa-sun");
+  } else {
+    themeIcon.classList.remove("fa-sun");
+    themeIcon.classList.add("fa-moon");
   }
 }
 
@@ -18,11 +18,11 @@ function toggleTheme(){
   if(node1.getAttribute('rel')=='stylesheet'){
     node1.setAttribute('rel', 'stylesheet alternate');
     node2.setAttribute('rel', 'stylesheet');
-    sessionStorage.setItem('theme', 'dark');
+    sessionStorage.setItem('theme', 'light');
   } else{
     node2.setAttribute('rel', 'stylesheet alternate');
     node1.setAttribute('rel', 'stylesheet');
-    sessionStorage.setItem('theme', 'light');
+    sessionStorage.setItem('theme', 'dark');
   }
   updateThemeIcon();
   return false;
