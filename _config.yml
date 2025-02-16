@@ -102,7 +102,8 @@ defaults:
 # Build settings
 remote_theme: "mmistakes/minimal-mistakes@4.26.2"
 markdown: kramdown
-minimal_mistakes_skin: "custom"
+minimal_mistakes_skin: "cdark"
+minimal_mistakes_skin_toggle: "clight"
 locale: "en-AU"
 plugins:
   - jekyll-feed

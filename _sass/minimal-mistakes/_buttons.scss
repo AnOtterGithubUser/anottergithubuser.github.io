@@ -95,3 +95,15 @@
     font-size: $type-size-7;
   }
 }
+
+.invisible {
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: bold;
+  color: inherit;
+}
+
+.invisible:hover {
+  text-decoration: underline;
+  font-weight: bold;
+}
