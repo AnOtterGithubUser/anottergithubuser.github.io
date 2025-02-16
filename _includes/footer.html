@@ -1,7 +1,7 @@
 <script>
 function updateThemeIcon(){
   const themeIcon = document.getElementById("theme-icon");
-  const theme = sessionStorage.getItem("theme") || "dark"; // Default to light if not set
+  const theme = sessionStorage.getItem("theme") || "light";
 
   if (theme === "dark") {
     themeIcon.classList.remove("fa-sun");
