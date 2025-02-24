@@ -1,35 +1,3 @@
-<script>
-function updateThemeIcon(){
-  const themeIcon = document.getElementById("theme-icon");
-  const theme = sessionStorage.getItem("theme") || "dark";
-
-  if (theme === "dark") {
-    themeIcon.classList.remove("fa-moon");
-    themeIcon.classList.add("fa-sun");
-  } else {
-    themeIcon.classList.remove("fa-sun");
-    themeIcon.classList.add("fa-moon");
-  }
-}
-
-function toggleTheme(){
-  let node1=document.getElementById('theme_source');
-  let node2=document.getElementById('theme_source_2');
-  if(node1.getAttribute('rel')=='stylesheet'){
-    node1.setAttribute('rel', 'stylesheet alternate');
-    node2.setAttribute('rel', 'stylesheet');
-    sessionStorage.setItem('theme', 'light');
-  } else{
-    node2.setAttribute('rel', 'stylesheet alternate');
-    node1.setAttribute('rel', 'stylesheet');
-    sessionStorage.setItem('theme', 'dark');
-  }
-  updateThemeIcon();
-  return false;
-}
-
-document.addEventListener("DOMContentLoaded", updateThemeIcon);
-</script>
 <div class="page__footer-follow">
   <ul class="social-icons">
     {% if site.data.ui-text[site.locale].follow_label %}
@@ -45,14 +13,8 @@ document.addEventListener("DOMContentLoaded", updateThemeIcon);
     {% endif %}
 
     {% unless site.atom_feed.hide %}
-      <li><a href="{% if site.atom_feed.path %}{{ site.atom_feed.path }}{% else %}{{ '/feed.xml' | relative_url }}{% endif %}"><i class="fas fa-fw fa-rss-square" aria-hidden="true"></i> {{ site.data.ui-text[site.locale].feed_label | default: "Feed" }}</a></li>
+      <li><a href="{% if site.atom_feed.path %}{{ site.atom_feed.path }}{% else %}{{ '/feed.xml' | relative_url }}{% endif %}"><i class="fas fa-fw fa-rss-square" aria-hidden="true"></i> {{ site.data.ui-text[site.locale].feed_label | default: "" }}</a></li>
     {% endunless %}
-
-    {% if site.minimal_mistakes_skin_toggle %}
-      <span class="invisible">
-        <li onclick="toggleTheme()"><a><i class="fas fa-fw" aria-hidden="true" id="theme-icon" ></i>THEME</a></li>
-      </span>
-    {% endif %}
 
   </ul>
 </div>
