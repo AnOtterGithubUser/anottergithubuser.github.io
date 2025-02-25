@@ -38,3 +38,5 @@ gem "faraday-retry", "~> 2.2"
 gem "jekyll-sitemap", "~> 1.4"
 
 gem "minimal-mistakes-jekyll", "~> 4.26"
+
+gem "jekyll-seo-tag", "~> 2.8"
