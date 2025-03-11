@@ -8,4 +8,4 @@ classes: wide
 sort_by: date
 sort_order: reverse
 ---
-Peeks are simple posts about my current interests
+Peeks are simple posts about my current interests. 
