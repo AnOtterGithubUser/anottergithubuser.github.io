@@ -42,3 +42,5 @@ gem "minimal-mistakes-jekyll", "~> 4.26"
 gem "jekyll-seo-tag", "~> 2.8"
 
 gem "jekyll-compose", "~> 0.12.0", group: [:jekyll_plugins]
+
+gem "jemoji", "~> 0.13.0"
