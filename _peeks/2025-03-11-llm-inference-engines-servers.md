@@ -43,22 +43,41 @@ To me, this did not make sense. That's when I realized that hidden behind the si
         
 I have to admit, this concept was a bit foreign to me.       
 I thought you would use a framework such as PyTorch or TensorFlow to load a model's weights and architecture and then perform the matrices multiplications. Like a boosted numpy on GPU, right? Well, not quite.   
-This is close to what we was happening back in early 2023 with our slow PyTorch container on Sagemaker, and as I said, it did not work very well.   
+This is close to what we did back in early 2023 with our slow PyTorch container on Sagemaker, and as I said, it did not work very well.   
        
 PyTorch and TensorFlow are indeed able to load the weights of a model, its architecture and then perform matrix multiplication during a forward pass to provide an output. However, they are general-purpose tensor computing frameworks and are not optimized for LLMs.      
       
 ### What makes LLM so special?     
-Large Language Models rely heavily  on the [Transformers architecture](https://research.google/blog/transformer-a-novel-neural-network-architecture-for-language-understanding/). Transformers are based on the *attention mechanism* which is a scaled dot-product between 3 matrices, $Q$, $K$, and $V$. Each of these matrices is related to one token (*a token is a word part that LLMs are trained on*).    
+Large Language Models rely heavily  on the [Transformers architecture](https://research.google/blog/transformer-a-novel-neural-network-architecture-for-language-understanding/). Transformers are based on the *attention mechanism* which is a scaled dot-product between 3 matrices, $Q$, $K$, and $V$.
      
 $$
 \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
 $$     
       
 *Breathe in, this is the only equation in the article*   
-    
-At inference, generating one new token from a LLM requires a lot of these dot-products between these matrices for each token in the sequence.         
-Instead of recomputing all these matrices for each token, it is better to store the matrices of past tokens in memory. Ideally GPU memory for fast reads. This is where problems start...    
        
+Each of these matrices is related to one token (*a token is a word part that LLMs are trained on*).   
+          
+<p align="center">
+  <img src="/assets/images/token_example.png" alt="Alt text" style="max-width: 100%;">
+  <em style="font-size: 0.8em;">Figure 1. Example of tokens seen by ChatGPT</em>
+</p>
+      
+At inference, tokens are generated one by one which requires a lot of these dot-products between these matrices for each token in the sequence. In pure PyTorch, these matrices are re-computed from scratch at each generation, even for tokens that were already seen. This is why it is slow.      
+        
+<p align="center">
+  <img src="/assets/images/pytorch_decoding.gif" alt="Transformers-based decoding in PyTorch" />
+  <em style="font-size: 0.8em;">Figure 2. Transformers-based decoding in pure PyTorch</em>
+</p>
+        
+Instead of recomputing all these matrices for each token, it is better to cache the matrices of past tokens in memory. Ideally GPU memory for fast reads. 
+         
+<p align="center">
+  <img src="/assets/images/memory_management_decoding.gif" alt="Transformers-based decoding with memory management" />
+  <em style="font-size: 0.8em;">Figure 3. Transformers-based decoding with memory management</em>
+</p>
+      
+This is where problems start...           
 See, the computation part of generating a token is not very intensive for a GPU, these are **really** good at computing dot-products (that is why Nvidia's stock soared). LLM inference is not **computation-bound**.    
 However, it requires storing a lot of matrices. The required storage space grows with the sequence length. At some point, the GPU may run out of memory. Hence, LLM inference is **memory-bound**.
 
