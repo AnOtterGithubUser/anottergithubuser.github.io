@@ -111,6 +111,7 @@ plugins:
   - jekyll-include-cache
   - jekyll-sitemap
   - jekyll-seo-tag
+  - jemoji
 compress_html:
   clippings: all
   ignore:
