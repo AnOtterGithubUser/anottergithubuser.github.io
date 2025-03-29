@@ -4,7 +4,7 @@ date: 2025-03-11 15:47 +1100
 excerpt: Deploying a LLM on your own infrastructure is getting common, but how does it actually work?
 category: peek llm generativeai
 ---
-A year ago I wrote an article while I was at OCTO Technology where I presented the [different ways one could deploy an open source LLM](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). This is a particularly interesting topic to me, so I kept digging.     
+A year ago I wrote an article where I presented the [different ways one could deploy an open source LLM](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). This is a particularly interesting topic to me, so I kept digging.     
        
 A lot has changed in just two years within the open source landscape of generative AI. I first started working with open source LLMs in the spring of 2023. Privacy and ownership were my main motivations, but at the time, the options were limited—you could basically choose between LLaMA… and LLaMA.      
 Jokes aside, there were a few others. I experimented with T5 (Google), Dolly (Databricks), Red Pajama (Stanford), etc. However, GPT4 had just been released, and open source alternatives were not even on par with GPT 3.5, let alone its successor. Not to diminish the great work behind these models. LLMs were a new thing, GPT 3.5 was barely six months old, and as we later saw, it was only a matter of time before open-source caught up.     
@@ -116,7 +116,7 @@ Triton Inference Server has nothing to do with LLM. It is a general purpose infe
 It is implemented in C++, making it more efficient than vLLM's fastAPI server. Triton comes with gRPC support like TGI but goes further. It enables to serve multiple models simultaneously, to chain models, and comes with fine-grained scheduling. It really is a production-grade general server.
     
 However, my experience with Triton has been quite painful compared to TGI and vLLM. FastAPI might not be the most efficient but it makes prototyping with vLLM a breeze. On the other hand, Triton requires a lot more work to set up.     
-LLMs in Triton are best served with TensorRT-LLM, Nvidia's own engine. I described my experience in setting up a Triton server with TensorRT-LLM backend in [my previous article at OCTO](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). Although it might be the best server for enterprise-level production, I am sticking with vLLM fastAPI server for now.
+LLMs in Triton are best served with TensorRT-LLM, Nvidia's own engine. I described my experience in setting up a Triton server with TensorRT-LLM backend in [my previous article](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). Although it might be the best server for enterprise-level production, I am sticking with vLLM fastAPI server for now.
         
        
 <p align="center">
