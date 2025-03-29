@@ -63,14 +63,14 @@ Each of these matrices is related to one token (*a token is a word part that LLM
   <em style="font-size: 0.8em;">Figure 1. Example of tokens seen by ChatGPT</em>
 </p>
       
-At inference, tokens are generated one by one which requires a lot of these dot-products between these matrices for each token in the sequence. In pure PyTorch, these matrices are re-computed from scratch at each generation, even for tokens that were already seen. This is why it is slow.      
+At inference, tokens are generated one by one which requires a lot of these dot-products between these matrices for each token in the sequence. In pure PyTorch, these matrices are re-computed from scratch at each generation, even for tokens that were already seen. So, everytime a new token is generated, everything is forgotten, and the sequence with the new token is fed back. This is why it is slow, and gets slower with longer sequences.      
         
 <p align="center">
   <img src="/assets/images/pytorch_decoding.gif" alt="Transformers-based decoding in PyTorch" />
   <em style="font-size: 0.8em;">Figure 2. Transformers-based decoding in pure PyTorch</em>
 </p>
         
-Instead of recomputing all these matrices for each token, it is better to cache the matrices of past tokens in memory. Ideally GPU memory for fast reads. 
+Instead of re-computing all these matrices from scratch, it is better to cache the matrices of past tokens in memory. Ideally GPU memory for fast reads. This would avoid wasting GPU resources on redundant computations.
          
 <p align="center">
   <img src="/assets/images/memory_management_decoding.gif" alt="Transformers-based decoding with memory management" />
@@ -78,13 +78,13 @@ Instead of recomputing all these matrices for each token, it is better to cache 
 </p>
       
 This is where problems start...           
-See, the computation part of generating a token is not very intensive for a GPU, these are **really** good at computing dot-products (that is why Nvidia's stock soared). LLM inference is not **computation-bound**.    
-However, it requires storing a lot of matrices. The required storage space grows with the sequence length. At some point, the GPU may run out of memory. Hence, LLM inference is **memory-bound**.
+See, the computation part of generating one new token is not very intensive for a GPU, these are **really** good at computing dot-products (that is why Nvidia's stock soared). So, LLM inference is not **computation-bound**.    
+However, it requires caching a lot of matrices. The required storage space grows with the sequence length. At some point, the GPU may run out of memory. Hence, LLM inference is **memory-bound**.
 
 
 ### Engine optimizations
 
-The memory required to store matrices during inference is called the **KV cache**. Managing the size of this KV cache is the key issue of Transformers-based language models generation.      
+The memory required to cache matrices during inference is called the **KV cache**. Managing the size of this KV cache is the key issue of Transformers-based language models generation.      
 It needs to be managed: allocated, read, written, freed. This memory management is one reason why we need a **LLM inference engine** on top of a tensor processing framework or executor (like PyTorch).   
 Also, in real use cases several sequences are usually sent in parallel to a LLM for inference (ex: one for each user). Processing these sequentially would yield a poor throughput and does not scale efficiently.
       
@@ -117,8 +117,15 @@ It is implemented in C++, making it more efficient than vLLM's fastAPI server. T
     
 However, my experience with Triton has been quite painful compared to TGI and vLLM. FastAPI might not be the most efficient but it makes prototyping with vLLM a breeze. On the other hand, Triton requires a lot more work to set up.     
 LLMs in Triton are best served with TensorRT-LLM, Nvidia's own engine. I described my experience in setting up a Triton server with TensorRT-LLM backend in [my previous article at OCTO](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). Although it might be the best server for enterprise-level production, I am sticking with vLLM fastAPI server for now.
-
+        
+       
+<p align="center">
+  <img src="/assets/images/sum_up.png" alt="Overview of LLM serving framework" />
+  <em style="font-size: 0.8em;">Figure 4. Overview of LLM serving framework</em>
+</p>
+       
+      
 ## Conclusion
 
 From a naïve question sparked by Triton's documentation, I discovered key concepts that I did not suspect. I am glad I looked under the hood. Hopefully, this might help you too.    
-I try to keep things simple in these peeks, but there is much more to say about LLM inference engines. If you want to dive into their optimizations with a practical support, I invite you to read this article [What happens behind vllm serve](https://www.otterpeeks.com/dives/behind-vllm-serve/)
+I try to keep things simple in these peeks, but there is much more to say about LLM inference engines. If you want to dive into their optimizations, I invite you to read this article [What happens behind vllm serve](https://www.otterpeeks.com/dives/behind-vllm-serve/)
