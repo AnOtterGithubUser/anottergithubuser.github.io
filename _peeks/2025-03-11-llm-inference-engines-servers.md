@@ -91,26 +91,28 @@ Also, in real use cases several sequences are usually sent in parallel to a LLM 
 Hence, an efficient LLM inference should implement several optimizations:  
 - *KV cache management*: allocate memory depending on sequences lengths, free memory when a sequence is finished, read and write matrices in between.
 - *Sequences batching*: incoming sequences should be put together in batches to be processed in parallel, to maximize GPU computations and minimize latency.
-- *Model sharding*: partition model weights across GPUs for large models, perform tensor computations in parallel on each GPU, gather the results.
-- *Custom CUDA kernels*: CUDA is a C/C++ framework developed by Nvidia for GPU programming. GPU functions in CUDA are called *kernels*. Engines use kernels optimized for LLMs.
+- *Distributed execution*: partition model weights across GPUs for large models, perform tensor computations in parallel on each GPU, gather the results.
+- *LLM specific CUDA kernels*: CUDA is a C/C++ framework developed by Nvidia for GPU programming. GPU functions in CUDA are called *kernels*. Engines implement kernels optimized for LLMs.
 
 For example, vLLM implements **PagedAttention**, an algorithm to compute dot-products efficiently with near-optimal memory management, and **continuous batching**, a method to process sequences in parallel with no memory wastes.    
 
 *Want to dive into the details? You can read this article [What happens behind vllm serve](https://www.otterpeeks.com/dives/behind-vllm-serve/)*
       
 vLLM provides a `LLMEngine` with all these optimizations. *This* is the backend that Triton supports.    
-This engine can be instantiated and used directly in a Python application. Now, serving multiple users would require packaging this application, for example in a docker image. You would need to spawn several containers to serve more users. In this case, that would mean spawning one instance of `LLMEngine` in each container. This would quickly strain GPU resources and thus scale poorly.   
-LLM inference engines implement efficient batching methods as we described. So an engine instance can be shared across several applications. It would also be beneficial to decouple the logic of the application (*how the LLM is used*) and the engine (*how the LLM is run*) instead of building a monolithic application.     
+This engine can be instantiated and used directly in a Python application.    
+        
+Now, serving multiple users would require deploying this application, for example in a docker image. You would need to spawn more containers to serve more users. In this case, there would be one instance of `LLMEngine` in each container. Each instance would load the entire models' weights. This would quickly strain GPU resources and thus scale poorly.   
+LLM inference engines implement efficient batching methods as we described. So an engine instance can be shared across several applications. It may also be beneficial to decouple the logic of the application (*how the LLM is used*) and the engine (*how the LLM is run*) instead of building a monolithic application.     
 This is why in practice, engines are often deployed within a standalone server process, a **LLM Inference Server**.
 
 ## LLM Inference Servers
     
 Although I have added "LLM" to this section, it is more for coherence than anything. The servers used to deploy the engines are not necessarily specific to language models.         
      
-vLLM and TGI include with their own inference servers. These are shipped with the engines. This entanglement was the source of my confusion.   
+vLLM and TGI include their own inference servers. These are shipped with the engines. This entanglement was the source of my confusion.   
 vLLM uses a fastAPI server while TGI uses Axum (Rust webserver framework).    
 vLLM fastAPI server is surprisingly simple. It is a REST API which supports token streaming. TGI is a bit more complex, it has native async runtime and gRPC support, thanks to Rust, making it much more production-grade.    
-vLLM's performance comes mostly from its engine but its server may not be fit for production because of Python-related limitations. Hence, why Triton may actually be a good alternative to serve the engine.    
+vLLM's performance comes mostly from its engine but its server may not be fit for production because of Python-related limitations. Hence, why Triton may actually be a good alternative to deploy the engine.    
       
 Triton Inference Server has nothing to do with LLM. It is a general purpose inference server developed by Nvidia to serve models from any backend.    
 It is implemented in C++, making it more efficient than vLLM's fastAPI server. Triton comes with gRPC support like TGI but goes further. It enables to serve multiple models simultaneously, to chain models, and comes with fine-grained scheduling. It really is a production-grade general server.
@@ -128,4 +130,4 @@ LLMs in Triton are best served with TensorRT-LLM, Nvidia's own engine. I describ
 ## Conclusion
 
 From a naïve question sparked by Triton's documentation, I discovered key concepts that I did not suspect. I am glad I looked under the hood. Hopefully, this might help you too.    
-I try to keep things simple in these peeks, but there is much more to say about LLM inference engines. If you want to dive into their optimizations, I invite you to read this article [What happens behind vllm serve](https://www.otterpeeks.com/dives/behind-vllm-serve/)
+I try to keep things simple in these peeks, but there is much more to say about LLM inference engines and servers. If you want to dive into their optimizations, I invite you to read this article [What happens behind vllm serve](https://www.otterpeeks.com/dives/behind-vllm-serve/)
