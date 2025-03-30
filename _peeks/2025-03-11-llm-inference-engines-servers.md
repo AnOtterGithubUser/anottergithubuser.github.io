@@ -8,10 +8,10 @@ A year ago I wrote an article where I presented the [different ways one could de
        
 A lot has changed in just two years within the open source landscape of generative AI. I first started working with open source LLMs in the spring of 2023. Privacy and ownership were my main motivations, but at the time, the options were limited—you could basically choose between LLaMA… and LLaMA.      
 Jokes aside, there were a few others. I experimented with T5 (Google), Dolly (Databricks), Red Pajama (Stanford), etc. However, GPT4 had just been released, and open source alternatives were not even on par with GPT 3.5, let alone its successor. Not to diminish the great work behind these models. LLMs were a new thing, GPT 3.5 was barely six months old, and as we later saw, it was only a matter of time before open-source caught up.     
-By April 2023, we had built a LangChain application for our use case. Since we were working on AWS, we deployed the models on Sagemaker endpoints. And then another issue emerged...      
+By April 2023, we had built a LangChain application for our use case. Since we were working on AWS, we deployed the models on SageMaker endpoints. And then another issue emerged...      
       
-It was **slow** -- painfully slow. Even with relatively small models. Not suitable for a customer-facing solution. We used the PyTorch Hugging Face deep learning inference container on Sagemaker and obviously it was not suited for this job. We were far from the speed of ChatGPT and its token streaming capabilities.    
-Fortunately, Hugging Face released their [TGI powered inference container on Sagemaker](https://huggingface.co/blog/sagemaker-huggingface-llm) a month later, which gave our application a **significant** speed boost! I realized deploying a LLM is one thing, making it fast and efficient is a whole different challenge.       
+It was **slow** -- painfully slow. Even with relatively small models. Not suitable for a customer-facing solution. We used the PyTorch Hugging Face deep learning inference container on SageMaker and obviously it was not suited for this job. We were far from the speed of ChatGPT and its token streaming capabilities.    
+Fortunately, Hugging Face released their [TGI powered inference container on SageMaker](https://huggingface.co/blog/sagemaker-huggingface-llm) a month later, which gave our application a **significant** speed boost! I realized deploying a LLM is one thing, making it fast and efficient is a whole different challenge.       
        
 It sparked my interest in LLM efficiency and in understanding inference frameworks and their optimizations.
        
@@ -43,7 +43,7 @@ To me, this did not make sense. That's when I realized that hidden behind the si
         
 I have to admit, this concept was a bit foreign to me.       
 I thought you would use a framework such as PyTorch or TensorFlow to load a model's weights and architecture and then perform the matrices multiplications. Like a boosted numpy on GPU, right? Well, not quite.   
-This is close to what we did back in early 2023 with our slow PyTorch container on Sagemaker, and as I said, it did not work very well.   
+This is close to what we did back in early 2023 with our slow PyTorch container on SageMaker, and as I said, it did not work very well.   
        
 PyTorch and TensorFlow are indeed able to load the weights of a model, its architecture and then perform matrix multiplication during a forward pass to provide an output. However, they are general-purpose tensor computing frameworks and are not optimized for LLMs.      
       
@@ -110,15 +110,15 @@ This is why in practice, engines are often deployed within a standalone server p
 Although I have added "LLM" to this section, it is more for coherence than anything. The servers used to deploy the engines are not necessarily specific to language models.         
      
 vLLM and TGI include their own inference servers. These are shipped with the engines. This entanglement was the source of my confusion.   
-vLLM uses a fastAPI server while TGI uses Axum (Rust webserver framework).    
-vLLM fastAPI server is surprisingly simple. It is a REST API which supports token streaming. TGI is a bit more complex, it has native async runtime and gRPC support, thanks to Rust, making it much more production-grade.    
+vLLM uses a FastAPI server while TGI uses Axum (Rust webserver framework).    
+vLLM FastAPI server is surprisingly simple. It is a REST API which supports token streaming. TGI is a bit more complex, it has native async runtime and gRPC support, thanks to Rust, making it much more production-grade.    
 vLLM's performance comes mostly from its engine but its server may not be fit for production because of Python-related limitations. Hence, why Triton may actually be a good alternative to deploy the engine.    
       
 Triton Inference Server has nothing to do with LLM. It is a general purpose inference server developed by Nvidia to serve models from any backend.    
-It is implemented in C++, making it more efficient than vLLM's fastAPI server. Triton comes with gRPC support like TGI but goes further. It enables to serve multiple models simultaneously, to chain models, and comes with fine-grained scheduling. It really is a production-grade general server.
+It is implemented in C++, making it more efficient than vLLM's FastAPI server. Triton comes with gRPC support like TGI but goes further. It enables to serve multiple models simultaneously, to chain models, and comes with fine-grained scheduling. It really is a production-grade general server.
     
 However, my experience with Triton has been quite painful compared to TGI and vLLM. FastAPI might not be the most efficient but it makes prototyping with vLLM a breeze. On the other hand, Triton requires a lot more work to set up.     
-LLMs in Triton are best served with TensorRT-LLM, Nvidia's own engine. I described my experience in setting up a Triton server with TensorRT-LLM backend in [my previous article](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). Although it might be the best server for enterprise-level production, I am sticking with vLLM fastAPI server for now.
+LLMs in Triton are best served with TensorRT-LLM, Nvidia's own engine. I described my experience in setting up a Triton server with TensorRT-LLM backend in [my previous article](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). Although it might be the best server for enterprise-level production, I am sticking with vLLM FastAPI server for now.
         
        
 <p align="center">
