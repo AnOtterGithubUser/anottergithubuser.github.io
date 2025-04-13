@@ -45,9 +45,17 @@ vllm = "vllm.entrypoints.cli.main:main"
 ```
      
 This tells us where the command lines for vLLM are defined. The one we want is in `vllm/entrypoints/cli/serve.py`.    
-            
-*Note: vLLM defines its command line interface with `argparse`, a popular choice as Python's built-in library. Although it is widely used, I personally lean toward [`click`](https://github.com/pallets/click) in my own projects. It is a modern library whose composability and decorator-based syntax make command line definitions more readable -- especially complex ones*      
-        
+
+<details class="note-toggle">
+  <summary><em>Note</em></summary>
+  <div>
+    <p>
+        <em>vLLM defines its command line interface with <a href="https://docs.python.org/3/library/argparse.html">argparse</a>, a popular choice as Python's built-in library. Although it is widely used, I personally lean toward <a href="https://github.com/pallets/click">click</a> in my own projects. It is a modern library whose composability and decorator-based syntax make command line definitions more readable -- especially complex ones
+        </em>
+    </p>
+  </div>
+</details>
+<p></p>
 Here is the command that is called to start the server.
      
 ```python
@@ -81,6 +89,7 @@ Then, the application state is populated with vLLM-specific variables:
 await init_app_state(engine_client, model_config, app.state, args)
 ```
 In FastAPI, the application state is a collection of objects that need to persist throughout the application's lifetime -- like the engine, logs, metrics, and more.
-The application is then bound to an `APIRouter`, a `FastAPI` object that defines the routes available on the server. The route we are interested in is `/v1/chat/completions`. As the name suggests, it is used for chatting with the model. Since it follows the same format as OpenAI API, a model served with vLLM can be used as a drop-in replacement for OpenAI models, with minimal changes.    
+The application is then bound to an `APIRouter`, a `FastAPI` object that defines the routes available on the server. The route we are interested in is `/v1/chat/completions`. As the name suggests, it is used for chatting with the model.      
+Since it follows the same format as OpenAI API, a model served with vLLM can be used as a drop-in replacement for OpenAI models, with minimal changes.    
 For example, in a LangChain application, one would normally use the `ChatOpenAI` class to use OpenAI models. To switch to a vLLM-served model, only the `base_url` argument shall be updated to your vLLM server's URL.
      
