@@ -6,7 +6,7 @@ category: dive llm generativeai
 ---
 vLLM is what first sparked my interest in LLM deployment -- although it was not the first framework I used. I actually started out with TGI, running in a dedicated container on AWS Sagemaker. vLLM, however, quickly became my go-to solution for serving LLM, mainly because of its performance and ease of use.    
       
-Iin a previous [peek]({{ site.url }}/peeks/llm-inference-engines-servers/), I covered the basics of modern LLM serving frameworks. At their core are the concepts of LLM engine and LLM server. That earlier post just scratched the surface. In this one, I will take a much deeper dive and we will see how these are actually implemented in vLLM.      
+In a previous [peek]({{ site.url }}/peeks/llm-inference-engines-servers/), I covered the basics of modern LLM serving frameworks. At their core are the concepts of LLM engine and LLM server. That earlier post just scratched the surface. In this one, I will take a much deeper dive and we will see how these are actually implemented in vLLM.      
       
 ## How to use vLLM's engine?
        
@@ -31,65 +31,364 @@ vllm serve mistralai/Mistral-Small-3.1-24B-Instruct-2503
 </p>
      
 This is how I have been using vLLM. This command spins up a FastAPI server that makes the engine available for online inference. As you can see, the command is very straightforward -- just run it on a capable machine (ideally with a GPU) and you are good to go (at least for prototyping).   
-This simplicity masks the optimizations implemented under the hood. You might be using vLLM without even realizing it -- like I was, as I explained [there]({{ site.url }}/peeks/llm-inference-engines-servers/). So, what is really going on behind `vLLM serve`?
-       
-## Command line entrypoints
-     
-*From this point on, I will refer to the [vLLM github repository](https://github.com/vllm-project/vllm/tree/main) as "the repository" or "vLLM repository".*     
+This simplicity masks the optimizations implemented under the hood. You might be using vLLM without even realizing it -- like I was, as I explained [there]({{ site.url }}/peeks/llm-inference-engines-servers/). So, what is really going on behind `vllm serve`?
+         
+*From this point on, I will refer to the [vLLM github repository](https://github.com/vllm-project/vllm/tree/main) as "the repository" or "vLLM repository". The filepaths are given from the root of the repository*    
+      
+## Going down the rabbit hole
+
+### vLLM inference server
+
+#### Command line entrypoints 
     
 Where to start? At the root of the repository is a `pyproject.toml` file. It acts as the central configuration for the project. It defines things like dependencies, settings, and more. The line we care about is this one.
      
-```yaml
-[project.scripts]
-vllm = "vllm.entrypoints.cli.main:main"
-```
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/pyproject.toml</code></figcaption>
+{% highlight yaml %}
+41 [project.scripts]
+42 vllm = "vllm.entrypoints.cli.main:main"
+{% endhighlight %}
+</figure>
      
-This tells us where the command lines for vLLM are defined. The one we want is in `vllm/entrypoints/cli/serve.py`.    
+This tells us where the command lines for vLLM are defined, and which commands are available.    
+          
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/vllm/entrypoints/cli/main.py</code></figcaption>
+{% highlight python %}
+14 CMD_MODULES = [
+15     vllm.entrypoints.cli.openai,
+16     vllm.entrypoints.cli.serve,
+17     vllm.entrypoints.cli.benchmark.main,
+18 ]
+{% endhighlight %}
+</figure>
+        
+When we call `vllm serve`, we use the serve command module from line 16. That is our next step.        
+           
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/cli/serve.py</code></figcaption>
+{% highlight python %}
+...
+8  from vllm.entrypoints.openai.api_server import run_server
+...
+14 class ServeSubcommand(CLISubcommand):
+15     """The `serve` subcommand for the vLLM CLI. """
+16 
+17     def __init__(self):
+18         self.name = "serve"
+19         super().__init__()
+20 
+21     @staticmethod
+22     def cmd(args: argparse.Namespace) -> None:
+23         # If model is specified in CLI (as positional arg), it takes precedence
+24         if hasattr(args, 'model_tag') and args.model_tag is not None:
+25             args.model = args.model_tag
+26 
+27         uvloop.run(run_server(args))
+{% endhighlight %}
+</figure>
 
-<details class="note-toggle">
-  <summary><em>Note</em></summary>
-  <div>
-    <p>
-        <em>vLLM defines its command line interface with <a href="https://docs.python.org/3/library/argparse.html">argparse</a>, a popular choice as Python's built-in library. Although it is widely used, I personally lean toward <a href="https://github.com/pallets/click">click</a> in my own projects. It is a modern library whose composability and decorator-based syntax make command line definitions more readable -- especially complex ones
-        </em>
-    </p>
-  </div>
-</details>
-<p></p>
-Here is the command that is called to start the server.
+The command gives us our next clue. The inference server is launched here, in an asynchronous event loop thanks to `uvloop`. The function `run_server` is run indefinitely --  until the process is manually stopped.  
+      
      
-```python
-class ServeSubcommand(CLISubcommand):
-    """The `serve` subcommand for the vLLM CLI. """
-
-    def __init__(self):
-        self.name = "serve"
-        super().__init__()
-
-    @staticmethod
-    def cmd(args: argparse.Namespace) -> None:
-        # If model is specified in CLI (as positional arg), it takes precedence
-        if hasattr(args, 'model_tag') and args.model_tag is not None:
-            args.model = args.model_tag
-
-        uvloop.run(run_server(args))
-```
+#### FastAPI application
      
-`uvloop` is a Python library for running high performance event loops for asyncio. Here, it runs the async function `run_server` indefinitely -- until the process is manually stopped.  
+The `run_server` function launches vLLM's inference server, built with FastAPI. Let's take a loop at the implementation.
+       
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
+{% highlight python %}
+1041 async def run_server(args, **uvicorn_kwargs) -> None:
+...      
+1077     async with build_async_engine_client(args) as engine_client:
+1078         app = build_app(args)
+1079
+1080         vllm_config = await engine_client.get_vllm_config()
+1081         await init_app_state(engine_client, vllm_config, app.state, args)
+{% endhighlight %}   
+</figure>  
      
-## vLLM inference server
-     
-The `run_server` function will launch vLLM's inference server, built with FastAPI.
-The FastAPI application is initialized with this line.   
-```python
-app = build_app(args)
-```
-Then, the application state is populated with vLLM-specific variables:
-```python
-await init_app_state(engine_client, model_config, app.state, args)
-```
-In FastAPI, the application state is a collection of objects that need to persist throughout the application's lifetime -- like the engine, logs, metrics, and more.
-The application is then bound to an `APIRouter`, a `FastAPI` object that defines the routes available on the server. The route we are interested in is `/v1/chat/completions`. As the name suggests, it is used for chatting with the model.      
+The FastAPI application is initialized in a context manager, that provides the `engine_client` object. This object is stored in the state of the application, it will be used during its entire lifetime. We will take a closer look at it in the next section, as it is the heart of vLLM.         
+        
+First, we want to know how vLLM starts a server and its routes. This is the interface we will use to talk to the engine.    
+        
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
+{% highlight python %}
+813 def build_app(args: Namespace) -> FastAPI:                                                             
+814     if args.disable_fastapi_docs:
+815         app = FastAPI(openapi_url=None,
+816                       docs_url=None,
+817                       redoc_url=None,
+818                       lifespan=lifespan)
+819     else:
+820         app = FastAPI(lifespan=lifespan)
+821     app.include_router(router)
+822     app.root_path = args.root_path
+{% endhighlight %}   
+</figure>  
+      
+In the `build_app` function, the application is bound to a `router` -- a `FastAPI` object that defines the routes available on the server. We can see in the file that there are a lot of routes.    
+The route we are interested in is `/v1/chat/completions`. As the name suggests, it is used for chatting with the model.       
+       
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
+{% highlight python %}
+305 router = APIRouter()
+...     
+466 @router.post("/v1/chat/completions",
+467              dependencies=[Depends(validate_json_request)])
+468 @with_cancellation
+469 @load_aware_call
+470 async def create_chat_completion(request: ChatCompletionRequest,
+471                                  raw_request: Request):
+472     handler = chat(raw_request)
+473     if handler is None:
+474         return base(raw_request).create_error_response(
+475             message="The model does not support Chat Completions API")
+476 
+477     generator = await handler.create_chat_completion(request, raw_request)
+478 
+479     if isinstance(generator, ErrorResponse):
+480         return JSONResponse(content=generator.model_dump(),
+481                             status_code=generator.code)
+482 
+483     elif isinstance(generator, ChatCompletionResponse):
+484         return JSONResponse(content=generator.model_dump())
+485 
+486     return StreamingResponse(content=generator, media_type="text/event-stream")    
+{% endhighlight %}   
+</figure>  
+       
 Since it follows the same format as OpenAI API, a model served with vLLM can be used as a drop-in replacement for OpenAI models, with minimal changes.    
 For example, in a LangChain application, one would normally use the `ChatOpenAI` class to use OpenAI models. To switch to a vLLM-served model, only the `base_url` argument shall be updated to your vLLM server's URL.
+      
+The route uses a function `create_chat_completion` that takes the user request and returns a response (`StreamingResponse` is a type of response provided by `fastapi`). It seems most of the logic is handled in the `chat` function at line 172 (hence the variable name `handler` perhaps?). This function is straightforward.  
+
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
+{% highlight python %}
+355 def chat(request: Request) -> Optional[OpenAIServingChat]:
+356     return request.app.state.openai_serving_chat
+{% endhighlight %}   
+</figure> 
      
+It uses an object `OpenAIServingChat` which was initialized in the application state. This object uses the `engine_client` to generate the response.    
+       
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/serving_chat.py</code></figcaption>
+{% highlight python %}
+48  class OpenAIServingChat(OpenAIServing):
+...
+121    async def create_chat_completion(
+122        self,
+123        request: ChatCompletionRequest,
+124        raw_request: Optional[Request] = None,
+125    ) -> Union[AsyncGenerator[str, None], ChatCompletionResponse,
+126               ErrorResponse]:
+...
+242         generator = self.engine_client.generate(
+243             engine_prompt,
+244             sampling_params,
+245             request_id,
+246             lora_request=lora_request,
+247             trace_headers=trace_headers,
+248             prompt_adapter_request=prompt_adapter_request,
+249             priority=request.priority,
+250         )
+{% endhighlight %}   
+</figure>   
+      
+Now we know how vLLM starts its server, how it is built, the route we will call, and when the engine comes to play. Finally !     
+If you are still here, first congratulations ! Well I told you it was a deep dive :sweat_smile:      
+Let's leave the server at that. Of course, there could be even more to say, and it is actually a good inspiration if you are trying to build a FastAPI application yourself, but this post is not about FastAPI, it is about vLLM. It is time to talk about the heart of the reactor, the infamous `engine_client`!
+     
+        
+### vLLM engine
+     
+The inference server is launched within a context that provides an `engine_client` object. It is an asynchronous engine but we do not know yet how it is created. From the code, we see it comes from the `build_async_engine_client` function. Let's take a closer look.
+        
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
+{% highlight python %}
+138 @asynccontextmanager
+139 async def build_async_engine_client(
+140         args: Namespace) -> AsyncIterator[EngineClient]:
+141 
+142     # Context manager to handle engine_client lifecycle
+143     # Ensures everything is shutdown and cleaned up on error/exit
+144     engine_args = AsyncEngineArgs.from_cli_args(args)
+145 
+146     async with build_async_engine_client_from_engine_args(
+147             engine_args, args.disable_frontend_multiprocessing) as engine:
+148         yield engine
+149 
+150 
+151 @asynccontextmanager
+152 async def build_async_engine_client_from_engine_args(
+153     engine_args: AsyncEngineArgs,
+154     disable_frontend_multiprocessing: bool = False,
+155 ) -> AsyncIterator[EngineClient]:
+...
+168     # V1 AsyncLLM.
+169     if envs.VLLM_USE_V1:
+...
+177         try:
+178             async_llm = AsyncLLM.from_vllm_config(
+179                 vllm_config=vllm_config,
+180                 usage_context=usage_context,
+181                 disable_log_requests=engine_args.disable_log_requests,
+182                 disable_log_stats=engine_args.disable_log_stats)
+183             yield async_llm
+... 
+188     # V0 AsyncLLM.
+189     elif (MQLLMEngineClient.is_unsupported_config(vllm_config)
+190           or disable_frontend_multiprocessing):
+191 
+...
+193         try:
+194             engine_client = AsyncLLMEngine.from_vllm_config(
+195                 vllm_config=vllm_config,
+196                 usage_context=usage_context,
+197                 disable_log_requests=engine_args.disable_log_requests,
+198                 disable_log_stats=engine_args.disable_log_stats)
+199             yield engine_client
+{% endhighlight %}   
+</figure>   
+       
+OK so this `engine_client` is whether an `AsyncLLM` in V1 or an `AsyncLLMEngine` in V0. Let's assume we are now using V1 as of April 2025. V1 is a significant upgrade of vLLM release in January 2025 which introduced several optimizations, notably the use of PyTorch pre-compiled graphs. 
+     
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/async_llm.py</code></figcaption>
+{% highlight python %}
+43  class AsyncLLM(EngineClient):
+...        
+45        def __init__(
+...
+55        ) -> None:
+...
+98            # EngineCore (starts the engine in background process).
+99            core_client_class = AsyncMPClient if (
+100                vllm_config.parallel_config.data_parallel_size
+101                == 1) else DPAsyncMPClient
+{% endhighlight %}   
+</figure> 
+     
+The client relies on an `EngineCore` running as a background process. This object implements all the optimizations of vLLM. Soon we should see references to KV cache management in the code. Here, `data_parallel_size` is 1 by default, so the client core is an `AsyncMPClient`. Let's skip a few jumps, this class is an async wrapper around the `MPClient`, (sorry for the spoil), which itself uses `CoreEngine`.
+     
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/core_client.py</code></figcaption>
+{% highlight python %}
+255 class CoreEngine:
+256     """One per data parallel rank."""
+257 
+258     def __init__(
+...
+267     ):
+...
+270         try:
+271             # Start EngineCore in background process.
+272             self.proc_handle = BackgroundProcHandle(
+273                 input_path=input_path,
+274                 output_path=output_path,
+275                 process_name=f"EngineCore_{index}",
+276                 target_fn=EngineCoreProc.run_engine_core,
+277                 process_kwargs={
+278                     "vllm_config": vllm_config,
+279                     "dp_rank": index,
+280                     "local_dp_rank": local_dp_rank,
+281                     "executor_class": executor_class,
+282                     "log_stats": log_stats,
+283                 })
+{% endhighlight %}   
+</figure> 
+
+We do not really care about the `BackgroundProcHandle` here, it is a technical object to run a procedure in the background. We are more interested in the procedure it is running, which is `EngineCoreProc.run_engine_core`. This procedure is an instance of `EngineCoreProc` which is an `EngineCore`
+
+<figure>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/core.py</code></figcaption>
+{% highlight python %}
+47 class EngineCore:
+48     """Inner loop of vLLM's Engine."""
+100 
+100     def __init__(self,
+100                  vllm_config: VllmConfig,
+100                  executor_class: type[Executor],
+100                  log_stats: bool,
+100                  executor_fail_callback: Optional[Callable] = None):
+100         assert vllm_config.model_config.runner_type != "pooling"
+100 
+100         logger.info("Initializing a V1 LLM engine (v%s) with config: %s",
+100                     VLLM_VERSION, vllm_config)
+100 
+100         self.log_stats = log_stats
+100 
+100         # Setup Model.
+100         self.model_executor = executor_class(vllm_config)
+100         if executor_fail_callback is not None:
+100             self.model_executor.register_failure_callback(
+100                 executor_fail_callback)
+100 
+100         # Setup KV Caches and update CacheConfig after profiling.
+100         num_gpu_blocks, num_cpu_blocks, kv_cache_config = \
+100             self._initialize_kv_caches(vllm_config)
+100 
+100         vllm_config.cache_config.num_gpu_blocks = num_gpu_blocks
+100         vllm_config.cache_config.num_cpu_blocks = num_cpu_blocks
+100 
+100         self.structured_output_manager = StructuredOutputManager(vllm_config)
+100 
+100         # Setup scheduler.
+100         if isinstance(vllm_config.scheduler_config.scheduler_cls, str):
+100             Scheduler = resolve_obj_by_qualname(
+100                 vllm_config.scheduler_config.scheduler_cls)
+100         else:
+100             Scheduler = vllm_config.scheduler_config.scheduler_cls
+100 
+100         # This warning can be removed once the V1 Scheduler interface is
+100         # finalized and we can maintain support for scheduler classes that
+100         # implement it
+100         if Scheduler is not V1Scheduler:
+100             logger.warning(
+100                 "Using configured V1 scheduler class %s. "
+100                 "This scheduler interface is not public and "
+100                 "compatibility may not be maintained.",
+100                 vllm_config.scheduler_config.scheduler_cls)
+100 
+100         self.scheduler: SchedulerInterface = Scheduler(
+100             scheduler_config=vllm_config.scheduler_config,
+100             model_config=vllm_config.model_config,
+100             cache_config=vllm_config.cache_config,
+100             lora_config=vllm_config.lora_config,
+100             kv_cache_config=kv_cache_config,
+100             speculative_config=vllm_config.speculative_config,
+100             structured_output_manager=self.structured_output_manager,
+100             include_finished_set=vllm_config.parallel_config.data_parallel_size
+100             > 1,
+100             log_stats=self.log_stats,
+100         )
+100 
+100         # Setup MM Input Mapper.
+100         self.mm_input_cache_server = MirroredProcessingCache(
+100             vllm_config.model_config)
+100 
+100         # Setup batch queue for pipeline parallelism.
+100         # Batch queue for scheduled batches. This enables us to asynchronously
+100         # schedule and execute batches, and is required by pipeline parallelism
+100         # to eliminate pipeline bubbles.
+100         self.batch_queue_size = self.model_executor.max_concurrent_batches
+100         self.batch_queue: Optional[queue.Queue[tuple[Future[ModelRunnerOutput],
+100                                                      SchedulerOutput]]] = None
+100         if self.batch_queue_size > 1:
+100             logger.info("Batch queue is enabled with size %d",
+100                         self.batch_queue_size)
+100             self.batch_queue = queue.Queue(self.batch_queue_size)
+{% endhighlight %}   
+</figure> 
+      
+Jackpot! Everything is here: the kv cache, the scheduler, the GPU and CPU blocks, etc. If you look at the methods there are even decoding steps and incoming request management! This is indeed the core of vLLM V1 engine. There is just one more minor question...       
+           
+What does this all mean?
+
+## Cracking open vLLM engine's optimizations
