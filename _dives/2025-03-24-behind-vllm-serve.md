@@ -1,7 +1,8 @@
 ---
 title: "What happens behind `vllm serve`"
 date: 2025-03-24 11:22 +1100
-excerpt: 
+excerpt: "You may already be using vLLM, but do you really know what happens when you run it?" 
+toc: true
 category: dive llm generativeai
 ---
 vLLM is what first sparked my interest in LLM deployment -- although it was not the first framework I used. I actually started out with TGI, running in a dedicated container on AWS Sagemaker. vLLM, however, quickly became my go-to solution for serving LLM, mainly because of its performance and ease of use.    
@@ -33,9 +34,12 @@ vllm serve mistralai/Mistral-Small-3.1-24B-Instruct-2503
 This is how I have been using vLLM. This command spins up a FastAPI server that makes the engine available for online inference. As you can see, the command is very straightforward -- just run it on a capable machine (ideally with a GPU) and you are good to go (at least for prototyping).   
 This simplicity masks the optimizations implemented under the hood. You might be using vLLM without even realizing it -- like I was, as I explained [there]({{ site.url }}/peeks/llm-inference-engines-servers/). So, what is really going on behind `vllm serve`?
          
-*From this point on, I will refer to the [vLLM github repository](https://github.com/vllm-project/vllm/tree/main) as "the repository" or "vLLM repository". The filepaths are given from the root of the repository*    
       
 ## Going down the rabbit hole
+
+*From this point on, I will refer to the [vLLM github repository](https://github.com/vllm-project/vllm/tree/main) as "the repository" or "vLLM repository". The filepaths are given from the root of the repository*     
+       
+This section is a journey in vLLM's codebase. If you are not interested in the implementation but more about the theoretical optimizations in vLLM's engine, you can jump to the next section [Cracking open vLLM's engine optimizations](#cracking-open-vllm-engines-optimizations).       
 
 ### vLLM inference server
 
@@ -43,7 +47,7 @@ This simplicity masks the optimizations implemented under the hood. You might be
     
 Where to start? At the root of the repository is a `pyproject.toml` file. It acts as the central configuration for the project. It defines things like dependencies, settings, and more. The line we care about is this one.
      
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/pyproject.toml</code></figcaption>
 {% highlight yaml %}
 41 [project.scripts]
@@ -53,7 +57,7 @@ Where to start? At the root of the repository is a `pyproject.toml` file. It act
      
 This tells us where the command lines for vLLM are defined, and which commands are available.    
           
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/vllm/entrypoints/cli/main.py</code></figcaption>
 {% highlight python %}
 14 CMD_MODULES = [
@@ -66,7 +70,7 @@ This tells us where the command lines for vLLM are defined, and which commands a
         
 When we call `vllm serve`, we use the serve command module from line 16. That is our next step.        
            
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/cli/serve.py</code></figcaption>
 {% highlight python %}
 ...
@@ -96,7 +100,7 @@ The command gives us our next clue. The inference server is launched here, in an
      
 The `run_server` function launches vLLM's inference server, built with FastAPI. Let's take a loop at the implementation.
        
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
 {% highlight python %}
 1041 async def run_server(args, **uvicorn_kwargs) -> None:
@@ -113,7 +117,7 @@ The FastAPI application is initialized in a context manager, that provides the `
         
 First, we want to know how vLLM starts a server and its routes. This is the interface we will use to talk to the engine.    
         
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
 {% highlight python %}
 813 def build_app(args: Namespace) -> FastAPI:                                                             
@@ -132,7 +136,7 @@ First, we want to know how vLLM starts a server and its routes. This is the inte
 In the `build_app` function, the application is bound to a `router` -- a `FastAPI` object that defines the routes available on the server. We can see in the file that there are a lot of routes.    
 The route we are interested in is `/v1/chat/completions`. As the name suggests, it is used for chatting with the model.       
        
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
 {% highlight python %}
 305 router = APIRouter()
@@ -166,7 +170,7 @@ For example, in a LangChain application, one would normally use the `ChatOpenAI`
       
 The route uses a function `create_chat_completion` that takes the user request and returns a response (`StreamingResponse` is a type of response provided by `fastapi`). It seems most of the logic is handled in the `chat` function at line 172 (hence the variable name `handler` perhaps?). This function is straightforward.  
 
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
 {% highlight python %}
 355 def chat(request: Request) -> Optional[OpenAIServingChat]:
@@ -176,7 +180,7 @@ The route uses a function `create_chat_completion` that takes the user request a
      
 It uses an object `OpenAIServingChat` which was initialized in the application state. This object uses the `engine_client` to generate the response.    
        
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/serving_chat.py</code></figcaption>
 {% highlight python %}
 48  class OpenAIServingChat(OpenAIServing):
@@ -209,7 +213,7 @@ Let's leave the server at that. Of course, there could be even more to say, and 
      
 The inference server is launched within a context that provides an `engine_client` object. It is an asynchronous engine but we do not know yet how it is created. From the code, we see it comes from the `build_async_engine_client` function. Let's take a closer look.
         
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
 {% highlight python %}
 138 @asynccontextmanager
@@ -259,7 +263,7 @@ The inference server is launched within a context that provides an `engine_clien
        
 OK so this `engine_client` is whether an `AsyncLLM` in V1 or an `AsyncLLMEngine` in V0. Let's assume we are now using V1 as of April 2025. V1 is a significant upgrade of vLLM release in January 2025 which introduced several optimizations, notably the use of PyTorch pre-compiled graphs. 
      
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/async_llm.py</code></figcaption>
 {% highlight python %}
 43  class AsyncLLM(EngineClient):
@@ -277,7 +281,7 @@ OK so this `engine_client` is whether an `AsyncLLM` in V1 or an `AsyncLLMEngine`
      
 The client relies on an `EngineCore` running as a background process. This object implements all the optimizations of vLLM. Soon we should see references to KV cache management in the code. Here, `data_parallel_size` is 1 by default, so the client core is an `AsyncMPClient`. Let's skip a few jumps, this class is an async wrapper around the `MPClient`, (sorry for the spoil), which itself uses `CoreEngine`.
      
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/core_client.py</code></figcaption>
 {% highlight python %}
 255 class CoreEngine:
@@ -306,7 +310,7 @@ The client relies on an `EngineCore` running as a background process. This objec
 
 We do not really care about the `BackgroundProcHandle` here, it is a technical object to run a procedure in the background. We are more interested in the procedure it is running, which is `EngineCoreProc.run_engine_core`. This procedure is an instance of `EngineCoreProc` which is an `EngineCore`
 
-<figure>
+<figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/core.py</code></figcaption>
 {% highlight python %}
 47 class EngineCore:
@@ -389,6 +393,43 @@ We do not really care about the `BackgroundProcHandle` here, it is a technical o
       
 Jackpot! Everything is here: the kv cache, the scheduler, the GPU and CPU blocks, etc. If you look at the methods there are even decoding steps and incoming request management! This is indeed the core of vLLM V1 engine. There is just one more minor question...       
            
+                    
+                  
 What does this all mean?
 
 ## Cracking open vLLM engine's optimizations
+
+### The problem with naïve KV cache management
+
+In my [previous post]({{ site.url }}/peeks/llm-inference-engines-servers/), I explained how LLM inference is computation-bound. In details, it consists of two phases:
+- Prefill-phase (*Prompt processing*): Compute Q, K, V matrices for each token in the prompt. This phase is **compute-bound**. However, computations here can be run in parallel, because all tokens are known, so it is usually fast.     
+      
+*e.g. it is the time before the first token appears in ChatGPT*.
+- Decoding phase (*Generation*): Generate tokens one by one from the prompt, hence this phase is sequential. Computations cannot be run in parallel and K, V matrices for each new token shall be cached to avoid recomputing them at every step. The bottleneck here is managing the linear growth of KV cache with sequence length, hence it is a **memory-bound** process. This phase is usually much slower.      
+       
+*e.g. it is the time from when the first token appears until the answer is complete*
+
+Because the decoding phase usually dominates latency, we often summarize LLM inference as **memory-bound**.   
+    
+Managing the KV cache is the key issue here.    
+First, as a rule of thumb, model weights take ~60% of GPU memory, and the KV cache ~30%, leaving ~10% for computations during decoding. A naïve implementation would always allocate the maximum memory available, regardless of the sequence length. Since most tensor processing frameworks require tensors to be stored in contiguous memory, older serving frameworks would allocate a contiguous chunk of GPU memory for caching. It would typically be the largest possible size, which is the context window of the model. Context windows went from 2048 tokens at first in open-source LLM, to up to [10 million with Llama 4](https://ai.meta.com/blog/llama-4-multimodal-intelligence/#:~:text=Llama%204%20Scout%20offers%20an%20industry%2Dleading%20context%20window%20of%2010M) now. So, this method scales poorly.    
+Then, sequence lengths are not known in advance. Hence, allocating a huge chunk of memory for a request that will eventually use just a small fraction of it is highly inefficient, as a large part will remain unused, *and* unavailable to other incoming sequences. Pre-allocation is not suited for the dynamic nature of decoding.    
+Finally, LLMs do not generate one sequence only. It might be surprising, because you only see one answer in the end, but LLMs use decoding algorithms like beam search, which run several decoding in parallel, resulting in multiple output sequences. These sequences may often include the same first tokens until they diverge. In older frameworks, the matrices for these common tokens would be cached several times in different places, because they would have to be stored in contiguous memory space.     
+        
+To tackle this issue, vLLM introduces **PagedAttention**, in addition with a **near-zero waste KV cache manager**, and an **efficient sequence scheduler**.
+
+### vLLM's KV cache manager    
+
+Instead of pre-allocating one large contiguous chunk of memory, vLLM's KV cache manager splits it in small contiguous memory blocks. These are fixed-size but not necessarily contiguous. A block shall be small enough that it would waste only a tiny fraction of memory if unused, yet large enough to hold at least one semantically meaningful item. The smallest item is a (K, V) pair for one token, so a block may hold at least one pair, hence we could say blocks are *token-granular*. The engine allocates blocks dynamically as the sequence grows.
+However, this approach alone would not enable sharing of token matrices between multiple sequences during decoding, nor would it suit traditional tensor-processing frameworks expecting one big contiguous tensor.    
+The core idea behind vLLM's KV cache manager is to use *logical* blocks that map to *physical* ones. This is inspired by virtual memory in operating systems. Distinct logical blocks can point to the same physical blocks to enable sharing. Tensor-processing frameworks would also perceive logical blocks as one large contiguous tensor.
+To make it work, the engine must maintain a *mapping table* to keep track of block references for each sequence. Much like how a Spark driver would keep track of which executor holds which RDD partition of a dataset, across a distributed system.
+This logical-to-physical mapping is the key idea of vLLM. It enables the KV cache to grow dynamically, without pre-allocating physical memory, and to share matrices across multiple sequences during decoding. Virtual blocks may be pre-allocated, but not take any actual space on GPU, until physical blocks are allocated and mapped by the engine.
+       
+      
+### PagedAttention
+
+PagedAttention is the algorithm that derives from the block memory-management approach. Instead of computing the sum of value vectors $V$, weighted by attention scores for every new token, it first computes the attention scores at block-level, and then computes the weighted sum to get the final output.
+
+### Continuous batching
+

@@ -56,21 +56,21 @@ $$
       
 *Breathe in, this is the only equation in the article*   
        
-Each of these matrices is related to one token (*a token is a word part that LLMs are trained on*).   
+Each of row of these matrices is related to one token (*a token is a word part that LLMs are trained on*).   
           
 <p align="center">
   <img src="/assets/images/token_example.png" alt="Alt text" style="max-width: 100%;">
   <em style="font-size: 0.8em;">Figure 1. Example of tokens seen by ChatGPT</em>
 </p>
       
-At inference, tokens are generated one by one which requires a lot of these dot-products between these matrices for each token in the sequence. In pure PyTorch, these matrices are re-computed from scratch at each generation, even for tokens that were already seen. So, everytime a new token is generated, everything is forgotten, and the sequence with the new token is fed back. This is why it is slow, and gets slower with longer sequences.      
+At inference, tokens are generated one by one which requires a lot of dot-products between these matrices for each token in the sequence. In pure PyTorch, these matrices are re-computed from scratch at each generation, even for tokens that were already seen. So, everytime a new token is generated, everything is forgotten, and the sequence with the new token is fed back. This is why it is slow, and gets slower with longer sequences.      
         
 <p align="center">
   <img src="/assets/images/pytorch_decoding.gif" alt="Transformers-based decoding in PyTorch" />
   <em style="font-size: 0.8em;">Figure 2. Transformers-based decoding in pure PyTorch</em>
 </p>
         
-Instead of re-computing all these matrices from scratch, it is better to cache the matrices of past tokens in memory. Ideally GPU memory for fast reads. This would avoid wasting GPU resources on redundant computations.
+Instead of re-computing all these matrices from scratch, it is better to cache the rows of past tokens in memory. Ideally GPU memory for fast reads. This would avoid wasting GPU resources on redundant computations.
          
 <p align="center">
   <img src="/assets/images/memory_management_decoding.gif" alt="Transformers-based decoding with memory management" />
@@ -79,24 +79,24 @@ Instead of re-computing all these matrices from scratch, it is better to cache t
       
 This is where problems start...           
 See, the computation part of generating one new token is not very intensive for a GPU, these are **really** good at computing dot-products (that is why Nvidia's stock soared). So, LLM inference is not **computation-bound**.    
-However, it requires caching a lot of matrices. The required storage space grows with the sequence length. At some point, the GPU may run out of memory. Hence, LLM inference is **memory-bound**.
+However, it requires caching a lot of rows. The required storage space grows with the sequence length. At some point, the GPU may run out of memory. Hence, LLM inference is **memory-bound**.
 
 
 ### Engine optimizations
 
-The memory required to cache matrices during inference is called the **KV cache**. Managing the size of this KV cache is the key issue of Transformers-based language models generation.      
+The memory required to cache rows during inference is called the **KV cache**. Managing the size of this KV cache is the key issue of Transformers-based language models generation.      
 It needs to be managed: allocated, read, written, freed. This memory management is one reason why we need a **LLM inference engine** on top of a tensor processing framework or executor (like PyTorch).   
 Also, in real use cases several sequences are usually sent in parallel to a LLM for inference (ex: one for each user). Processing these sequentially would yield a poor throughput and does not scale efficiently.
       
 Hence, an efficient LLM inference should implement several optimizations:  
-- *KV cache management*: allocate memory depending on sequences lengths, free memory when a sequence is finished, read and write matrices in between.
+- *KV cache management*: allocate memory depending on sequences lengths, free memory when a sequence is finished, read and write rows in between.
 - *Sequences batching*: incoming sequences should be put together in batches to be processed in parallel, to maximize GPU computations and minimize latency.
 - *Distributed execution*: partition model weights across GPUs for large models, perform tensor computations in parallel on each GPU, gather the results.
 - *LLM specific CUDA kernels*: CUDA is a C/C++ framework developed by Nvidia for GPU programming. GPU functions in CUDA are called *kernels*. Engines implement kernels optimized for LLMs.
 
 For example, vLLM implements **PagedAttention**, an algorithm to compute dot-products efficiently with near-optimal memory management, and **continuous batching**, a method to process sequences in parallel with no memory wastes.    
 
-*Want to dive into the details? You can read this article [What happens behind vllm serve](https://www.otterpeeks.com/dives/behind-vllm-serve/)*
+*Want to dive into the details? You can read this article [What happens behind vllm serve]({{ site.url }}/dives/behind-vllm-serve/)*
       
 vLLM provides a `LLMEngine` with all these optimizations. *This* is the backend that Triton supports.    
 This engine can be instantiated and used directly in a Python application.    
@@ -130,4 +130,4 @@ LLMs in Triton are best served with TensorRT-LLM, Nvidia's own engine. I describ
 ## Conclusion
 
 From a naïve question sparked by Triton's documentation, I discovered key concepts that I did not suspect. I am glad I looked under the hood. Hopefully, this might help you too.    
-I try to keep things simple in these peeks, but there is much more to say about LLM inference engines and servers. If you want to dive into their optimizations, I invite you to read this article [What happens behind vllm serve](https://www.otterpeeks.com/dives/behind-vllm-serve/)
+I try to keep things simple in these peeks, but there is much more to say about LLM inference engines and servers. If you want to dive into their optimizations, I invite you to read this article [What happens behind vllm serve]({{ site.url }}/dives/behind-vllm-serve/)
