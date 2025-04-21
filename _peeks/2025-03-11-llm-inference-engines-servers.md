@@ -56,7 +56,7 @@ $$
       
 *Breathe in, this is the only equation in the article*   
        
-Each of row of these matrices is related to one token (*a token is a word part that LLMs are trained on*).   
+Each of row of these matrices corresponds to one token (*a token is a word part that LLMs are trained on*).   
           
 <p align="center">
   <img src="/assets/images/token_example.png" alt="Alt text" style="max-width: 100%;">

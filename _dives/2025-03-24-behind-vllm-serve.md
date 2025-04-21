@@ -429,7 +429,31 @@ This logical-to-physical mapping is the key idea of vLLM. It enables the KV cach
       
 ### PagedAttention
 
-PagedAttention is the algorithm that derives from the block memory-management approach. Instead of computing the sum of value vectors $V$, weighted by attention scores for every new token, it first computes the attention scores at block-level, and then computes the weighted sum to get the final output.
+To understand PagedAttention, let's come back to the self-attention equation:       
+        
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+$$     
+
+
+        
+Frameworks such as PyTorch require the rows of Q, K, and V to be contiguous in memory to compute these dot-products. This is not the case for physical blocks in vLLM.     
+At step $t$ of decoding, a new query vector $q_t$ is computed. We need to compute its dot-product against rows of K and V for past tokens, i.e $(k_0,...,k_{t-1})$ and $(v_0,...,v_{t-1})$. We can look up these vectors in the KV cache. Let's note $B$, the number of tokens vectors held in each block. We need to look up $\lceil t/B \rceil$ blocks. Since blocks are contiguous chunks of memory, we can apply the self attention equation block wise. For a block $j$:
+    
+$$
+O_j^t = \frac{\text{exp}(\frac{q_t K_j^\top}{\sqrt{d_k}})}{\sum_i^{t/B} \text{exp}(\frac{q_t K_i^\top}{\sqrt{d_k}})} V_j
+$$
+
+Here $q_t \in \mathbb{R}^d_k$ and $K_j \in \mathbb{R}^{B \times d_k}$, so $q_t K_j^\top \in \mathbb{R}^B$. $V_j \in \mathbb{R}^{B \times d_v}$, so $O_j^t \in \mathbb{R}^{d_v}$. $O_j^t$ is the partial output, we still have to sum over the blocks to get the final output:     
+      
+$$
+O_t = \sum_j^{\lceil t/B \rceil} O_j^t
+$$
+      
+
+This is PagedAttention! It is the application of self attention adapted to non contiguous blocks.
+      
+
 
 ### Continuous batching
 
