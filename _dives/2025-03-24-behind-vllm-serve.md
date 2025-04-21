@@ -429,31 +429,44 @@ This logical-to-physical mapping is the key idea of vLLM. It enables the KV cach
       
 ### PagedAttention
 
-To understand PagedAttention, let's come back to the self-attention equation:       
+To understand PagedAttention, let's first come back to the self-attention equation:       
         
 $$
 \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
 $$     
 
-
-        
-Frameworks such as PyTorch require the rows of Q, K, and V to be contiguous in memory to compute these dot-products. This is not the case for physical blocks in vLLM.     
-At step $t$ of decoding, a new query vector $q_t$ is computed. We need to compute its dot-product against rows of K and V for past tokens, i.e $(k_0,...,k_{t-1})$ and $(v_0,...,v_{t-1})$. We can look up these vectors in the KV cache. Let's note $B$, the number of tokens vectors held in each block. We need to look up $\lceil t/B \rceil$ blocks. Since blocks are contiguous chunks of memory, we can apply the self attention equation block wise. For a block $j$:
-    
+Focus on what happens at decoding step $t$ (for the first layer and one attention head):     
+1. Get the embedding of the current token $x_t \in \mathbb{R}^{d_e}$, where $d_e$ is the embedding size.
+2. Project the embedding to get the current query, key, and value vectors, with $d$ the projection dimension       
 $$
-O_j^t = \frac{\text{exp}(\frac{q_t K_j^\top}{\sqrt{d_k}})}{\sum_i^{t/B} \text{exp}(\frac{q_t K_i^\top}{\sqrt{d_k}})} V_j
-$$
-
-Here $q_t \in \mathbb{R}^d_k$ and $K_j \in \mathbb{R}^{B \times d_k}$, so $q_t K_j^\top \in \mathbb{R}^B$. $V_j \in \mathbb{R}^{B \times d_v}$, so $O_j^t \in \mathbb{R}^{d_v}$. $O_j^t$ is the partial output, we still have to sum over the blocks to get the final output:     
+\begin{gather}
+  q_t = W_q x_t \in \mathbb{R}^{d},\\
+  k_t = W_k x_t \in \mathbb{R}^{d},\\
+  v_t = W_v x_t \in \mathbb{R}^{d}.
+\end{gather}
+$$      
+3. Concatenate the current key and value vectors $k_t, v_t$ with previous ones $(k_1,...,k_{t-1})$ and $(v_1,...,v_{t-1})$ to get $K_t, V_t \in \mathbb{R}^{t \times d}$. Retrieve the previous vectors from KV-cache if available, otherwise recompute them.
+4. Compute the attention scores for the current token $a_t = \text{softmax}\left(\frac{q_t K_t^\top}{\sqrt{d}}\right) \in \mathbb{R}^t$.
+5. Compute the layer output $o_t = a_t V_t \in \mathbb{R}^d$.
       
-$$
-O_t = \sum_j^{\lceil t/B \rceil} O_j^t
-$$
+For the next layers, the steps are essentially the same except the input at step 1 is the output of the previous layer.   
+         
+However, this does not work with non contiguous blocks, because tensor-processing frameworks such as PyTorch cannot perform the dot products of steps 4 and 5.     
+In vLLM, key and value vectors of previous steps for one sequence are stored in blocks in the KV-cache. For each block $j$ holding $B$ tokens, we have $K_j$ and $V_j$, the concatenations of contiguous key vectors, and contiguous value vectors, both in $\mathbb{R}^{B \times d}$.    
+A block being a contiguous memory chunk, we may compute the dot-product $s_j=\text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \in \mathbb{R}^{1 \times B}$ and then sum these for each block $i$ in the sequence to get the block-wise attention score $A_j = \frac{s_j}{\sum_i s_i} \in \mathbb{R}^{1 \times B}$. Finally, we sum the partial weighted sums of value vectors of each block, to get the final output, $o_t = \sum_j A_j V_j \in \mathbb{R}^{1 \times d}$.     
+This is **PagedAttention**, a block-wise decomposition of the self attention equation.
+               
+vLLM developped specific kernels, *i.e functions to perform computations on GPU*, in order to implement PagedAttention efficiently.
       
 
-This is PagedAttention! It is the application of self attention adapted to non contiguous blocks.
-      
+### Sequence scheduler
 
-
-### Continuous batching
-
+In real-life conditions, we would process sequences in a batch to maximize GPU utilization and minimize latency for users.      
+A naïve implementation would pre-allocate the maximum possible output length for each sequence in the batch. This would lead to huge memory wastes, as the majority of sequences are likely to complete way before reaching this limit. With current context windows of up to 10M tokens, it would simply be impossible to allocate enough memory. vLLM avoids this pitfall with logical-to-physical block mapping and PagedAttention, leaving more memory for sequences to be processed.    
+Then, naïvely scheduling batches at sequence-level would still be very inefficient. This would mean waiting for enough sequences to arrive to process a batch, and new incoming sequences would have to wait for the whole batch to finish. Hence, vLLM's scheduler implements token-iteration level batching. At each decoding step, the scheduler removes completed sequences from the batch and add new ones, always trying to maximize GPU utilization. This approach is called **continuous batching**. You may also see **in-flight** or **dynamic batching**, these all refer to the same thing.    
+These optimizations achieve near-optimal memory usage and significantly increase vLLM's throughtput in batch processing.       
+     
+Now what happens when there are simply too many incoming sequences to fit in GPU memory?     
+In this case, vLLM implements a first-in-first-out policy. This means that later sequences may be evicted from GPU. In this case, their blocks are sent to CPU to await processing. Once earlier sequences complete, the blocks are sent back to GPU.   
+However, not all evicted blocks may be sent to CPU, some are simply deleted when running out of CPU RAM. In this case, all the blocks in the sequence are deleted, and the KV cache for this sequence is recomputed when GPU memory is freed again. The sequence composed of the initial prompt with additional generated tokens before eviction, may just be considered as one bigger prompt, so it is similar to the prefill-phase computation, and can be run in parallel. This still comes at a cost but even recomputation is actually quite fast.  
+ 

@@ -92,7 +92,7 @@ Hence, an efficient LLM inference should implement several optimizations:
 - *KV cache management*: allocate memory depending on sequences lengths, free memory when a sequence is finished, read and write rows in between.
 - *Sequences batching*: incoming sequences should be put together in batches to be processed in parallel, to maximize GPU computations and minimize latency.
 - *Distributed execution*: partition model weights across GPUs for large models, perform tensor computations in parallel on each GPU, gather the results.
-- *LLM specific CUDA kernels*: CUDA is a C/C++ framework developed by Nvidia for GPU programming. GPU functions in CUDA are called *kernels*. Engines implement kernels optimized for LLMs.
+- *LLM specific CUDA kernels*: CUDA is a C/C++ framework developed by Nvidia for GPU programming. GPU functions in CUDA are called *kernels*. Engines implement kernels optimized for LLM inference.
 
 For example, vLLM implements **PagedAttention**, an algorithm to compute dot-products efficiently with near-optimal memory management, and **continuous batching**, a method to process sequences in parallel with no memory wastes.    
 
