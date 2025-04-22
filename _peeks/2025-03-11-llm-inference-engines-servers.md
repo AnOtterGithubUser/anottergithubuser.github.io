@@ -4,6 +4,8 @@ date: 2025-03-11 15:47 +1100
 excerpt: Deploying a LLM on your own infrastructure is getting common, but how does it actually work?
 category: peek llm generativeai
 ---
+*Updated April 21st 2025*
+          
 A year ago I wrote an article where I presented the [different ways one could deploy an open source LLM](https://blog.octo.com/comment-utiliser-un-llm-open-source-1). This is a particularly interesting topic to me, so I kept digging.     
        
 A lot has changed in just two years within the open source landscape of generative AI. I first started working with open source LLMs in the spring of 2023. Privacy and ownership were my main motivations, but at the time, the options were limited—you could basically choose between LLaMA… and LLaMA.      
@@ -56,14 +58,14 @@ $$
       
 *Breathe in, this is the only equation in the article*   
        
-Each of row of these matrices corresponds to one token (*a token is a word part that LLMs are trained on*).   
+Each row of these matrices corresponds to one token (*a token is a word part that LLMs are trained on*).   
           
 <p align="center">
   <img src="/assets/images/token_example.png" alt="Alt text" style="max-width: 100%;">
   <em style="font-size: 0.8em;">Figure 1. Example of tokens seen by ChatGPT</em>
 </p>
       
-At inference, tokens are generated one by one which requires a lot of dot-products between these matrices for each token in the sequence. In pure PyTorch, these matrices are re-computed from scratch at each generation, even for tokens that were already seen. So, everytime a new token is generated, everything is forgotten, and the sequence with the new token is fed back. This is why it is slow, and gets slower with longer sequences.      
+At inference, tokens are generated one by one which requires a lot of dot-products between these matrices. In pure PyTorch, these matrices are re-computed from scratch at each decoding step, even for tokens that were already seen. So, everytime a new token is generated, everything is forgotten, and the sequence with the new token is fed back. This is why it is slow, and gets slower with longer sequences.       
         
 <p align="center">
   <img src="/assets/images/pytorch_decoding.gif" alt="Transformers-based decoding in PyTorch" />
@@ -78,23 +80,23 @@ Instead of re-computing all these matrices from scratch, it is better to cache t
 </p>
       
 This is where problems start...           
-See, the computation part of generating one new token is not very intensive for a GPU, these are **really** good at computing dot-products (that is why Nvidia's stock soared). So, LLM inference is not **computation-bound**.    
+See, the computation part of generating one new token is not very intensive for a GPU, these are **really** good at computing dot-products (that is why Nvidia's stock soared). So, LLM inference is not **computation-bound**.     
 However, it requires caching a lot of rows. The required storage space grows with the sequence length. At some point, the GPU may run out of memory. Hence, LLM inference is **memory-bound**.
 
 
 ### Engine optimizations
 
 The memory required to cache rows during inference is called the **KV cache**. Managing the size of this KV cache is the key issue of Transformers-based language models generation.      
-It needs to be managed: allocated, read, written, freed. This memory management is one reason why we need a **LLM inference engine** on top of a tensor processing framework or executor (like PyTorch).   
+It needs to be managed: allocated, read, written, freed. This memory management is one reason why we need a **LLM inference engine** on top of a tensor processing framework (like PyTorch).   
 Also, in real use cases several sequences are usually sent in parallel to a LLM for inference (ex: one for each user). Processing these sequentially would yield a poor throughput and does not scale efficiently.
       
 Hence, an efficient LLM inference should implement several optimizations:  
 - *KV cache management*: allocate memory depending on sequences lengths, free memory when a sequence is finished, read and write rows in between.
-- *Sequences batching*: incoming sequences should be put together in batches to be processed in parallel, to maximize GPU computations and minimize latency.
+- *Sequence batching*: incoming sequences should be put together in batches to be processed in parallel, to maximize GPU utilization and minimize latency.
 - *Distributed execution*: partition model weights across GPUs for large models, perform tensor computations in parallel on each GPU, gather the results.
 - *LLM specific CUDA kernels*: CUDA is a C/C++ framework developed by Nvidia for GPU programming. GPU functions in CUDA are called *kernels*. Engines implement kernels optimized for LLM inference.
 
-For example, vLLM implements **PagedAttention**, an algorithm to compute dot-products efficiently with near-optimal memory management, and **continuous batching**, a method to process sequences in parallel with no memory wastes.    
+For example, vLLM implements **PagedAttention**, an algorithm to compute dot-products efficiently with near-optimal memory management, and **continuous batching**, a method to process sequences in parallel with no memory wastes and high throughput.    
 
 *Want to dive into the details? You can read this article [What happens behind vllm serve]({{ site.url }}/dives/behind-vllm-serve/)*
       

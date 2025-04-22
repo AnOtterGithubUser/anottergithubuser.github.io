@@ -14,7 +14,7 @@ In a previous [peek]({{ site.url }}/peeks/llm-inference-engines-servers/), I cov
 I previously discussed how vLLM's main optimizations come from its engine. It can be instantiated and used offline on its own.    
      
 ```python
-from vLLM import LLM
+from vllm import LLM
 
 llm = LLM(model="mistralai/Mistral-Small-3.1-24B-Instruct-2503") # path to the model repository in Hugging Face Hub
 ```
@@ -261,7 +261,7 @@ The inference server is launched within a context that provides an `engine_clien
 {% endhighlight %}   
 </figure>   
        
-OK so this `engine_client` is whether an `AsyncLLM` in V1 or an `AsyncLLMEngine` in V0. Let's assume we are now using V1 as of April 2025. V1 is a significant upgrade of vLLM release in January 2025 which introduced several optimizations, notably the use of PyTorch pre-compiled graphs. 
+OK so this `engine_client` is whether an `AsyncLLM` in V1 or an `AsyncLLMEngine` in V0. Let's assume we are now using V1 as of April 2025. V1 is a significant upgrade of vLLM whose alpha released in January 2025, introducing several optimizations. 
      
 <figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/async_llm.py</code></figcaption>
@@ -461,12 +461,14 @@ vLLM developped specific kernels, *i.e functions to perform computations on GPU*
 
 ### Sequence scheduler
 
-In real-life conditions, we would process sequences in a batch to maximize GPU utilization and minimize latency for users.      
+In real-life conditions, we would process sequences in batches to maximize GPU utilization and minimize latency for users.      
 A naïve implementation would pre-allocate the maximum possible output length for each sequence in the batch. This would lead to huge memory wastes, as the majority of sequences are likely to complete way before reaching this limit. With current context windows of up to 10M tokens, it would simply be impossible to allocate enough memory. vLLM avoids this pitfall with logical-to-physical block mapping and PagedAttention, leaving more memory for sequences to be processed.    
-Then, naïvely scheduling batches at sequence-level would still be very inefficient. This would mean waiting for enough sequences to arrive to process a batch, and new incoming sequences would have to wait for the whole batch to finish. Hence, vLLM's scheduler implements token-iteration level batching. At each decoding step, the scheduler removes completed sequences from the batch and add new ones, always trying to maximize GPU utilization. This approach is called **continuous batching**. You may also see **in-flight** or **dynamic batching**, these all refer to the same thing.    
+Naïvely scheduling batches at sequence-level would still be very inefficient. This would mean waiting for enough sequences to arrive to process a batch, and new incoming sequences would have to wait for the whole batch to finish. Hence, vLLM's scheduler implements iteration-level scheduling. At each decoding step, the scheduler removes completed sequences from the batch and add new ones, always trying to maximize GPU utilization. This results in what is called   **continuous batching**, the batch size varies with incoming and outcoming sequences (you may also see **in-flight** or **dynamic batching**, these are the same thing).    
 These optimizations achieve near-optimal memory usage and significantly increase vLLM's throughtput in batch processing.       
-     
-Now what happens when there are simply too many incoming sequences to fit in GPU memory?     
-In this case, vLLM implements a first-in-first-out policy. This means that later sequences may be evicted from GPU. In this case, their blocks are sent to CPU to await processing. Once earlier sequences complete, the blocks are sent back to GPU.   
-However, not all evicted blocks may be sent to CPU, some are simply deleted when running out of CPU RAM. In this case, all the blocks in the sequence are deleted, and the KV cache for this sequence is recomputed when GPU memory is freed again. The sequence composed of the initial prompt with additional generated tokens before eviction, may just be considered as one bigger prompt, so it is similar to the prefill-phase computation, and can be run in parallel. This still comes at a cost but even recomputation is actually quite fast.  
- 
+      
+Now what happens when there are simply too many incoming sequences?     
+In this case, vLLM implements a first-in-first-out type policy. Low priority sequences may be evicted from GPU if it is at capacity. In this case, their KV-cache blocks are sent to CPU to await processing. Once earlier sequences complete, the evicted sequence's blocks are sent back to GPU to resume generation. vLLM does not accept new incoming sequences until evicted sequences are swapped back and completed.  
+Thus CPU memory space is also bounded, and some evicted sequences' blocks are simply deleted when running out of CPU RAM. In this case, the KV cache for these sequences is recomputed when GPU memory is available again.    
+An evicted sequence is composed of the initial prompt plus tokens generated before eviction. As all tokens are known, it can be considered as one larger prompt and KV cache may be recomputed in parallel, similar to the pre-fill phase. Although it still adds latency, it is much faster than sequential processing during decoding.
+
+#TODO: vLLM has been integrated in Hugging Face Hub
