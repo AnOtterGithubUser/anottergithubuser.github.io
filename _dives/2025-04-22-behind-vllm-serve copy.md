@@ -53,7 +53,7 @@ Let's start from the above command a user would run in its terminal:
 vllm serve mistralai/Mistral-Small-3.1-24B-Instruct-2503
 ```
      
-The command calls a script that relies on vllm CLI. This script is defined in [`vllm/pyproject.toml`](https://github.com/vllm-project/vllm/blob/main/pyproject.toml) at the root of the repository. This kind of file is used with popular project management tools like [Poetry]() to act as a central configuration for settings, dependencies, scripts, and more.    
+The command calls a script that relies on vllm CLI. This script is defined in [`vllm/pyproject.toml`](https://github.com/vllm-project/vllm/blob/main/pyproject.toml) at the root of the repository. This kind of file is used with popular project management tools like [Poetry](https://python-poetry.org/) to act as a central configuration for settings, dependencies, scripts, and more.    
      
 <figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>[`vllm/pyproject.toml`](https://github.com/vllm-project/vllm/blob/main/pyproject.toml)</code></figcaption>
@@ -243,53 +243,48 @@ vLLM V1 released its alpha in January 2025 and introduces significant upgrades w
 </figure> 
     
 A lot is happening during initialization, among which the KV cache and scheduler setup. We will take about these later, as they are vLLM's key optimizations.   
-The `EngineCore` requires an executor to actually run the model. In our case, the executor class is [`MultiProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/multiproc_executor.py), it is in charge of setting up the workers on the device.    
-Assuming the user runs the command on a machine with GPUs, it will start several instances of [`GPUWorker`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py), one for each GPU. Each worker requires a runner for the model, in this case a [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L62). The runner starts by loading the model on the device thanks a model loader.     
-Now, several implementations of the model loader are defined depending on the format of the model weights (`DummyModelLoader`, `TensorizerLoader`, `ShardedStateLoader`, `BitsAndBytesModelLoader`, `GGUFModelLoader`, `RunaiModelStreamerLoader`, `ShardedStateLoader`, `DefaultModelLoader`). The appropriate one will be selected depending on the user's choice and configuration, in the [`get_model_loader`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L1516) function. Let's assume the user does not have a specific configuration and runs the command without any other argument. Hence, the loader will be (`DefaultModelLoader`)[https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L210]. It will get the model path passed in the CLI parameters `'mistralai/Mistral-Small-3.1-24B-Instruct-2503'`. Assuming again that this is the first time the user runs this command on the machine, the loader will download the model weights from Hugging Face Hub ([`download_weights_from_hf`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/weight_utils.py#L228)). It will perform a direct API call via the `snapshot_download` function of ` huggingface_hub` library to get the weights.     
+The `EngineCore` requires an executor to actually run the model. The executor subclass depends on the number of GPUs available on the user's machine and their configuration. The executor is in charge of setting up the workers on the device.       
+The default for one GPU is a [`UniProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/abstract.py#L98). For several GPU on one node (one machine), the executor class is [`MultiProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/multiproc_executor.py). Then, for several nodes, required for very large models like Mixtral 8x22B (~280G), it would resort to a [`RayDistributedExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/ray_distributed_executor.py#L27). In our case the model weights are about 50G, so the user should better run it on a machine with several GPUs, or one A100 80G (it would fit yet be a bit tight). Let's assume the user has several A10G GPUs, hence vLLM would use a `MultiProcExecutor`.    
+         
+Assuming the user runs the command on a machine with several GPUs, the executor will start several instances of [`GPUWorker`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py), one for each GPU. Each worker requires a runner for the model, in this case a [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L62). The runner starts by loading the model on the device thanks a model loader.     
+Now, several implementations of the model loader are defined depending on the format of the model weights (`DummyModelLoader`, `TensorizerLoader`, `ShardedStateLoader`, `BitsAndBytesModelLoader`, `GGUFModelLoader`, `RunaiModelStreamerLoader`, `ShardedStateLoader`, `DefaultModelLoader`). The appropriate one will be selected depending on the user's choice and configuration, in the [`get_model_loader`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L1516) function.   
+         
+Let's assume the user does not have a specific configuration and runs the command without any other argument. Hence, the loader will be (`DefaultModelLoader`)[https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L210]. It will get the model path passed in the CLI parameters `'mistralai/Mistral-Small-3.1-24B-Instruct-2503'`. Assuming again that this is the first time the user runs this command on the machine, the loader will download the model weights from Hugging Face Hub ([`download_weights_from_hf`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/weight_utils.py#L228)). It will perform a direct API call via the `snapshot_download` function of `huggingface_hub` library to get the weights.     
+           
 The download may take a while depending on the model and the user's bandwidth. In this case, `Mistral-Small-3.1-24B-Instruct-2503` represents about 50Go of safetensors weights. Once the download is complete, the weights will be stored in this folder `~/.cache/huggingface/hub/Mistral-Small-3.1-24B-Instruct-2503` for a faster initialization next time. The worker will then load the weights on the GPU.    
 Once the workers are ready, and the core components of the engine are setup, the server will finally start to accept incoming requests.
 
+### Requesting the server
 
+vLLM's server exposes several routes, which are all defined in a [`router`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py#L305) object bound to the FastAPI application at launch. The user could directly request the LLM by running a command in terminal.
 
+```bash
+# Using the v1/completions route
+curl http://localhost:8000/v1/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "prompt": "The capital of Peru is",
+    }'
 
-      
-     
-#### Webserver
-     
-The `run_server` function launches vLLM's inference server, built with FastAPI. It initializes a FastAPI application, and binds it to a router. All of that is defined within a context which provides an engine client to the server. This client is stored into the application state at launch and is used during the application's entire lifetime.
+# Using the v1/chat/completions route
+curl http://localhost:8000/v1/chat/completions \
+    -H "Content-Type: application/json" \
+    -d '{
+        "model": "mistralai/Mistral-Small-3.1-24B-Instruct-2503",
+        "messages": [
+            {"role": "system", "content": "You tell the capitals of countries."},
+            {"role": "user", "content": "What is the capital of Peru?"}
+        ]
+    }'
+```
+
+For a chatbot that keeps a conversation history for dynamic conversations, you would now use the `v1/chat/completions` route. However, the curl command is a bit verbose and it would be tedious to pass the growing conversation history for every new request. So a user would usually rely on a library like [`openai`](https://github.com/openai/openai-python) or a framework like [LangChain](https://github.com/langchain-ai/langchain) or [LlamaIndex](https://github.com/run-llama/llama_index). We will assume that the user builds their application with LangChain, which is very convenient for me as it is the one I know best.      
        
-<figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>[`vllm/entrypoints/openai/api_server.py`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py)</code></figcaption>
-{% highlight python %}
-1041 async def run_server(args, **uvicorn_kwargs) -> None:
-...      
-1077     async with build_async_engine_client(args) as engine_client:
-1078         app = build_app(args)
-1079
-1080         vllm_config = await engine_client.get_vllm_config()
-1081         await init_app_state(engine_client, vllm_config, app.state, args)
-{% endhighlight %}   
-</figure>    
-        
-<figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>[`vllm/entrypoints/openai/api_server.py`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py)</code></figcaption>
-{% highlight python %}
-813 def build_app(args: Namespace) -> FastAPI:                                                             
-814     if args.disable_fastapi_docs:
-815         app = FastAPI(openapi_url=None,
-816                       docs_url=None,
-817                       redoc_url=None,
-818                       lifespan=lifespan)
-819     else:
-820         app = FastAPI(lifespan=lifespan)
-821     app.include_router(router)
-822     app.root_path = args.root_path
-{% endhighlight %}   
-</figure>  
-      
-The router defines the routes available on the server. These are implemented in the same file.     
-vLLM mimics the OpenAI API protocol to be used as a drop-in replacement for applications using OpenAI models. This API protocol requires models to be exposed on the `v1/chat/completions` route. It returns a `StreamingResponse`, indicating that vLLM does support token streaming.    
-
+Since, vLLM mimics OpenAI Chat Completions API, it can be used as a drop-in replacement for OpenAI models easily. Assuming the application used the [`ChatOpenAI`](https://python.langchain.com/docs/integrations/chat/openai/) object from LangChain, the user would simply need to change the `base_url` parameter to the URL of the server where vLLM is running.
+         
+The user's application is now calling the `v1/chat/completions` route on vLLM's server via LangChain. This will call the [`create_chat_completion`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py#L470) function that will return a `StreamingResponse`. The user will thus received the output chunk by chunk until completion, which minimizes the wait for interaction.    
+   
 <figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
 {% highlight python %}
@@ -317,229 +312,39 @@ vLLM mimics the OpenAI API protocol to be used as a drop-in replacement for appl
 485 
 486     return StreamingResponse(content=generator, media_type="text/event-stream")    
 {% endhighlight %}   
-</figure>  
+</figure> 
+   
+The core logic of generation resides in the engine client that was initialized at launch. It is implemented in the `AsyncLLM` class. The client leverages the engine core to add the user's request to the queue. The scheduler then reviews queued requests and schedules them for completion (I will talk about scheduling in the second part of the post).      
+         
+The executor then passes the request along until the model runner where it is transformed to the model's excepted input format. The [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L1077) finally executes the model forward pass with this input. The forward pass happens within a context which sets up the backend for the attention computation. vLLM supports [several backends](https://docs.vllm.ai/en/latest/getting_started/quickstart.html#on-attention-backends) for attention, and selects the most relevant one given the system, hardware, and model specification.     
 
-Applications based on OpenAI would frequently use the [`ChatOpenAI`](https://python.langchain.com/docs/integrations/chat/openai/) class of LangChain. To switch from OpenAI models to vLLM-served models, the `base_url` parameters should be set to the vLLM's server URL.    
-The core logic resides in the `create_chat_completion` function which mimics the OpenAI Chat Completion API. It is a method of the [`OpenAIServingChat`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/serving_chat.py) class, which is instantiated in `init_app_state` and uses the engine client. It relies on the `generate` method of the engine client.   
-       
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/serving_chat.py</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code>vllm/vllm/v1/worker/gpu_model_runner.py</code></figcaption>
 {% highlight python %}
-48  class OpenAIServingChat(OpenAIServing):
-...
-121    async def create_chat_completion(
-122        self,
-123        request: ChatCompletionRequest,
-124        raw_request: Optional[Request] = None,
-125    ) -> Union[AsyncGenerator[str, None], ChatCompletionResponse,
-126               ErrorResponse]:
-...
-242         generator = self.engine_client.generate(
-243             engine_prompt,
-244             sampling_params,
-245             request_id,
-246             lora_request=lora_request,
-247             trace_headers=trace_headers,
-248             prompt_adapter_request=prompt_adapter_request,
-249             priority=request.priority,
-250         )
-...
-{% endhighlight %}   
-</figure>   
-           
-
-So we know how vLLM starts its server, how it is built, the route we will call, and when the engine comes to play.         
-If you are still here, congratulations !  
-Let's leave the server at that. Of course, there could be even more to say, and it is actually a good inspiration if you are trying to build a FastAPI application yourself, but this post is not about FastAPI, it is about vLLM. It is time to talk about the heart of the reactor, the `engine_client`!
-     
-        
-### vLLM engine
-     
-The inference server is launched within a context that provides an `engine_client` object. It is an asynchronous engine but we do not know yet how it is created. From the code, we see it comes from the `build_async_engine_client` function. Let's take a closer look.
-        
-<figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
-{% highlight python %}
-138 @asynccontextmanager
-139 async def build_async_engine_client(
-140         args: Namespace) -> AsyncIterator[EngineClient]:
-141 
-142     # Context manager to handle engine_client lifecycle
-143     # Ensures everything is shutdown and cleaned up on error/exit
-144     engine_args = AsyncEngineArgs.from_cli_args(args)
-145 
-146     async with build_async_engine_client_from_engine_args(
-147             engine_args, args.disable_frontend_multiprocessing) as engine:
-148         yield engine
-149 
-150 
-151 @asynccontextmanager
-152 async def build_async_engine_client_from_engine_args(
-153     engine_args: AsyncEngineArgs,
-154     disable_frontend_multiprocessing: bool = False,
-155 ) -> AsyncIterator[EngineClient]:
-...
-168     # V1 AsyncLLM.
-169     if envs.VLLM_USE_V1:
-...
-177         try:
-178             async_llm = AsyncLLM.from_vllm_config(
-179                 vllm_config=vllm_config,
-180                 usage_context=usage_context,
-181                 disable_log_requests=engine_args.disable_log_requests,
-182                 disable_log_stats=engine_args.disable_log_stats)
-183             yield async_llm
+996  @torch.inference_mode()
+997  def execute_model(
+998      self,
+9990     scheduler_output: "SchedulerOutput",
+1000     intermediate_tensors: Optional[IntermediateTensors] = None,
+1001 ) -> Union[ModelRunnerOutput, torch.Tensor]:
 ... 
-188     # V0 AsyncLLM.
-189     elif (MQLLMEngineClient.is_unsupported_config(vllm_config)
-190           or disable_frontend_multiprocessing):
-191 
+1077 # Run the decoder.
+1078 # Use persistent buffers for CUDA graphs.
+1079 with set_forward_context(attn_metadata, self.vllm_config):
+1080     hidden_states = self.model(
+1081         input_ids=input_ids,
+1082         positions=positions,
+1083         intermediate_tensors=intermediate_tensors,
+1084         inputs_embeds=inputs_embeds,
+1085     )
 ...
-193         try:
-194             engine_client = AsyncLLMEngine.from_vllm_config(
-195                 vllm_config=vllm_config,
-196                 usage_context=usage_context,
-197                 disable_log_requests=engine_args.disable_log_requests,
-198                 disable_log_stats=engine_args.disable_log_stats)
-199             yield engine_client
-{% endhighlight %}   
-</figure>   
-       
-OK so this `engine_client` is whether an `AsyncLLM` in V1 or an `AsyncLLMEngine` in V0. Let's assume we are now using V1 as of April 2025. V1 is a significant upgrade of vLLM whose alpha released in January 2025, introducing several optimizations. 
-     
-<figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/async_llm.py</code></figcaption>
-{% highlight python %}
-43  class AsyncLLM(EngineClient):
-...        
-45        def __init__(
-...
-55        ) -> None:
-...
-98            # EngineCore (starts the engine in background process).
-99            core_client_class = AsyncMPClient if (
-100                vllm_config.parallel_config.data_parallel_size
-101                == 1) else DPAsyncMPClient
-{% endhighlight %}   
-</figure> 
-     
-The client relies on an `EngineCore` running as a background process. This object implements all the optimizations of vLLM. Soon we should see references to KV cache management in the code. Here, `data_parallel_size` is 1 by default, so the client core is an `AsyncMPClient`. Let's skip a few jumps, this class is an async wrapper around the `MPClient`, (sorry for the spoil), which itself uses `CoreEngine`.
-     
-<figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/core_client.py</code></figcaption>
-{% highlight python %}
-255 class CoreEngine:
-256     """One per data parallel rank."""
-257 
-258     def __init__(
-...
-267     ):
-...
-270         try:
-271             # Start EngineCore in background process.
-272             self.proc_handle = BackgroundProcHandle(
-273                 input_path=input_path,
-274                 output_path=output_path,
-275                 process_name=f"EngineCore_{index}",
-276                 target_fn=EngineCoreProc.run_engine_core,
-277                 process_kwargs={
-278                     "vllm_config": vllm_config,
-279                     "dp_rank": index,
-280                     "local_dp_rank": local_dp_rank,
-281                     "executor_class": executor_class,
-282                     "log_stats": log_stats,
-283                 })
 {% endhighlight %}   
 </figure> 
 
-We do not really care about the `BackgroundProcHandle` here, it is a technical object to run a procedure in the background. We are more interested in the procedure it is running, which is `EngineCoreProc.run_engine_core`. This procedure is an instance of `EngineCoreProc` which is an `EngineCore`
+Almost all of these backends call the [PagedAttention](https://github.com/vllm-project/vllm/blob/main/vllm/attention/ops/paged_attn.py) operation, when running on supported hardware. PagedAttention was developped by the vLLM's team to optimize self attention for LLM inference. They defined it as a custom operation and implemented specific CUDA kernels to support it. CUDA kernels are functions that run on NVidia GPUs.       
+         
+Honestly, this is where things get too technical for me. The CUDA kernels are implemented in [`csrc/attention/`](https://github.com/vllm-project/vllm/tree/main/csrc/attention) and the bindings are defined in [`csrc/torch_bindings.cpp`](https://github.com/vllm-project/vllm/blob/main/csrc/torch_bindings.cpp), to be used in the forward context. I expect most people would not need to touch that unless they are looking to optimize low-level logic for a few milli-seconds.    
 
-<figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/core.py</code></figcaption>
-{% highlight python %}
-47 class EngineCore:
-48     """Inner loop of vLLM's Engine."""
-100 
-100     def __init__(self,
-100                  vllm_config: VllmConfig,
-100                  executor_class: type[Executor],
-100                  log_stats: bool,
-100                  executor_fail_callback: Optional[Callable] = None):
-100         assert vllm_config.model_config.runner_type != "pooling"
-100 
-100         logger.info("Initializing a V1 LLM engine (v%s) with config: %s",
-100                     VLLM_VERSION, vllm_config)
-100 
-100         self.log_stats = log_stats
-100 
-100         # Setup Model.
-100         self.model_executor = executor_class(vllm_config)
-100         if executor_fail_callback is not None:
-100             self.model_executor.register_failure_callback(
-100                 executor_fail_callback)
-100 
-100         # Setup KV Caches and update CacheConfig after profiling.
-100         num_gpu_blocks, num_cpu_blocks, kv_cache_config = \
-100             self._initialize_kv_caches(vllm_config)
-100 
-100         vllm_config.cache_config.num_gpu_blocks = num_gpu_blocks
-100         vllm_config.cache_config.num_cpu_blocks = num_cpu_blocks
-100 
-100         self.structured_output_manager = StructuredOutputManager(vllm_config)
-100 
-100         # Setup scheduler.
-100         if isinstance(vllm_config.scheduler_config.scheduler_cls, str):
-100             Scheduler = resolve_obj_by_qualname(
-100                 vllm_config.scheduler_config.scheduler_cls)
-100         else:
-100             Scheduler = vllm_config.scheduler_config.scheduler_cls
-100 
-100         # This warning can be removed once the V1 Scheduler interface is
-100         # finalized and we can maintain support for scheduler classes that
-100         # implement it
-100         if Scheduler is not V1Scheduler:
-100             logger.warning(
-100                 "Using configured V1 scheduler class %s. "
-100                 "This scheduler interface is not public and "
-100                 "compatibility may not be maintained.",
-100                 vllm_config.scheduler_config.scheduler_cls)
-100 
-100         self.scheduler: SchedulerInterface = Scheduler(
-100             scheduler_config=vllm_config.scheduler_config,
-100             model_config=vllm_config.model_config,
-100             cache_config=vllm_config.cache_config,
-100             lora_config=vllm_config.lora_config,
-100             kv_cache_config=kv_cache_config,
-100             speculative_config=vllm_config.speculative_config,
-100             structured_output_manager=self.structured_output_manager,
-100             include_finished_set=vllm_config.parallel_config.data_parallel_size
-100             > 1,
-100             log_stats=self.log_stats,
-100         )
-100 
-100         # Setup MM Input Mapper.
-100         self.mm_input_cache_server = MirroredProcessingCache(
-100             vllm_config.model_config)
-100 
-100         # Setup batch queue for pipeline parallelism.
-100         # Batch queue for scheduled batches. This enables us to asynchronously
-100         # schedule and execute batches, and is required by pipeline parallelism
-100         # to eliminate pipeline bubbles.
-100         self.batch_queue_size = self.model_executor.max_concurrent_batches
-100         self.batch_queue: Optional[queue.Queue[tuple[Future[ModelRunnerOutput],
-100                                                      SchedulerOutput]]] = None
-100         if self.batch_queue_size > 1:
-100             logger.info("Batch queue is enabled with size %d",
-100                         self.batch_queue_size)
-100             self.batch_queue = queue.Queue(self.batch_queue_size)
-{% endhighlight %}   
-</figure> 
-      
-Jackpot! Everything is here: the kv cache, the scheduler, the GPU and CPU blocks, etc. If you look at the methods there are even decoding steps and incoming request management! This is indeed the core of vLLM V1 engine. There is just one more minor question...       
-           
-                    
-                  
-What does this all mean?
 
 ## Cracking open vLLM engine's optimizations
 
