@@ -246,12 +246,12 @@ A lot is happening during initialization, among which the KV cache and scheduler
 The `EngineCore` requires an executor to actually run the model. The executor subclass depends on the number of GPUs available on the user's machine and their configuration. The executor is in charge of setting up the workers on the device.       
 The default for one GPU is a [`UniProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/abstract.py#L98). For several GPU on one node (one machine), the executor class is [`MultiProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/multiproc_executor.py). Then, for several nodes, required for very large models like Mixtral 8x22B (~280G), it would resort to a [`RayDistributedExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/ray_distributed_executor.py#L27). In our case the model weights are about 50G, so the user should better run it on a machine with several GPUs, or one A100 80G (it would fit yet be a bit tight). Let's assume the user has several A10G GPUs, hence vLLM would use a `MultiProcExecutor`.    
          
-Assuming the user runs the command on a machine with several GPUs, the executor will start several instances of [`GPUWorker`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py), one for each GPU. Each worker requires a runner for the model, in this case a [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L62). The runner starts by loading the model on the device thanks a model loader.     
+Assuming the user runs the command on a machine with several GPUs, the executor will start several instances of [`GPUWorker`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py), one for each GPU. Each worker requires a runner for the model, in this case a [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L62). The runner starts by loading the model on the device thanks to a model loader.     
 Now, several implementations of the model loader are defined depending on the format of the model weights (`DummyModelLoader`, `TensorizerLoader`, `ShardedStateLoader`, `BitsAndBytesModelLoader`, `GGUFModelLoader`, `RunaiModelStreamerLoader`, `ShardedStateLoader`, `DefaultModelLoader`). The appropriate one will be selected depending on the user's choice and configuration, in the [`get_model_loader`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L1516) function.   
          
 Let's assume the user does not have a specific configuration and runs the command without any other argument. Hence, the loader will be (`DefaultModelLoader`)[https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L210]. It will get the model path passed in the CLI parameters `'mistralai/Mistral-Small-3.1-24B-Instruct-2503'`. Assuming again that this is the first time the user runs this command on the machine, the loader will download the model weights from Hugging Face Hub ([`download_weights_from_hf`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/weight_utils.py#L228)). It will perform a direct API call via the `snapshot_download` function of `huggingface_hub` library to get the weights.     
            
-The download may take a while depending on the model and the user's bandwidth. In this case, `Mistral-Small-3.1-24B-Instruct-2503` represents about 50Go of safetensors weights. Once the download is complete, the weights will be stored in this folder `~/.cache/huggingface/hub/Mistral-Small-3.1-24B-Instruct-2503` for a faster initialization next time. The worker will then load the weights on the GPU.    
+The download may take a while depending on the model and the user's bandwidth. In this case, `Mistral-Small-3.1-24B-Instruct-2503` represents about 50Go of safetensors weights. Once the download is complete, the weights will be stored in this folder `~/.cache/huggingface/hub/Mistral-Small-3.1-24B-Instruct-2503` on the machine for a faster next initialization. The worker will then load the weights on the GPU.    
 Once the workers are ready, and the core components of the engine are setup, the server will finally start to accept incoming requests.
 
 ### Requesting the server
@@ -346,28 +346,101 @@ Almost all of these backends call the [PagedAttention](https://github.com/vllm-p
 Honestly, this is where things get too technical for me. The CUDA kernels are implemented in [`csrc/attention/`](https://github.com/vllm-project/vllm/tree/main/csrc/attention) and the bindings are defined in [`csrc/torch_bindings.cpp`](https://github.com/vllm-project/vllm/blob/main/csrc/torch_bindings.cpp), to be used in the forward context. I expect most people would not need to touch that unless they are looking to optimize low-level logic for a few milli-seconds.    
 
 
-## Cracking open vLLM engine's optimizations
+## Understanding vLLM optimizations
 
-### The problem with naïve KV cache management
-
-In my [previous post]({{ site.url }}/peeks/llm-inference-engines-servers/), I explained how LLM inference is computation-bound. In details, it consists of two phases:
-- Prefill-phase (*Prompt processing*): Compute Q, K, V matrices for each token in the prompt. This phase is **compute-bound**. However, computations here can be run in parallel, because all tokens are known, so it is usually fast.     
-      
-*e.g. it is the time before the first token appears in ChatGPT*.
-- Decoding phase (*Generation*): Generate tokens one by one from the prompt, hence this phase is sequential. Computations cannot be run in parallel and K, V matrices for each new token shall be cached to avoid recomputing them at every step. The bottleneck here is managing the linear growth of KV cache with sequence length, hence it is a **memory-bound** process. This phase is usually much slower.      
+### KV cache management
        
-*e.g. it is the time from when the first token appears until the answer is complete*
+In my [previous post]({{ site.url }}/peeks/llm-inference-engines-servers/), I explained how LLM inference is mostly **memory-bound**. In details, generating an answer consists in two phases:   
+- Prefill-phase (*Prompt processing*): Compute the attention vectors for each token in the prompt. This phase is actually **compute-bound**, but fast as it takes advantage of GPU parallelism.
+*e.g. It is the time before the first token appears in ChatGPT*
+- Decoding phase (*Generation*): Generate tokens sequentially from the prompt. Computations cannot be run in parallel and the attention vectors for each new token shall be cached to avoid redundant computation at every step. Since the number of such vectors grows linearily with the length of the sequence, this phase is **memory-bound**. It amounts for most of the latency.
+*e.g. It is the time from when the first token appears until the answer is complete*  
+      
+Since the decoding phase usually dominates latency, LLM inference is often said to be **memory-bound**.
+     
+During decoding, only the key and value vectors are cached, as previous queries are never re-used. Here is the self attention equation for reference:
 
-Because the decoding phase usually dominates latency, we often summarize LLM inference as **memory-bound**.   
-    
-Managing the KV cache is the key issue here.    
-First, as a rule of thumb, model weights take ~60% of GPU memory, and the KV cache ~30%, leaving ~10% for computations during decoding. A naïve implementation would always allocate the maximum memory available, regardless of the sequence length. Since most tensor processing frameworks require tensors to be stored in contiguous memory, older serving frameworks would allocate a contiguous chunk of GPU memory for caching. It would typically be the largest possible size, which is the context window of the model. Context windows went from 2048 tokens at first in open-source LLM, to up to [10 million with Llama 4](https://ai.meta.com/blog/llama-4-multimodal-intelligence/#:~:text=Llama%204%20Scout%20offers%20an%20industry%2Dleading%20context%20window%20of%2010M) now. So, this method scales poorly.    
-Then, sequence lengths are not known in advance. Hence, allocating a huge chunk of memory for a request that will eventually use just a small fraction of it is highly inefficient, as a large part will remain unused, *and* unavailable to other incoming sequences. Pre-allocation is not suited for the dynamic nature of decoding.    
-Finally, LLMs do not generate one sequence only. It might be surprising, because you only see one answer in the end, but LLMs use decoding algorithms like beam search, which run several decoding in parallel, resulting in multiple output sequences. These sequences may often include the same first tokens until they diverge. In older frameworks, the matrices for these common tokens would be cached several times in different places, because they would have to be stored in contiguous memory space.     
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+$$   
+
+KV cache management is key in improving decoding latency and handling growing sequences. However, there is no way to know in advance how long a sequence will be.     
+A naïve implementation would try to allocate the maximum memory the LLM would need for a sequence, which is the model's context window. Since tensor-processing frameworks such as PyTorch require tensors to be contiguous in memory, it would pre-allocate a huge contiguous chunk of GPU RAM.    
+This would lead to huge memory wastes, as most sequences would never reach the current context windows lengths. These went from usually 2048 tokens in early 2023 open-source models, to up to 1 million now with the latest Llama 4 models. Llama 4 Scout even advertized a [10 million tokens context window](https://ai.meta.com/blog/llama-4-multimodal-intelligence/#:~:text=Llama%204%20Scout%20offers%20an%20industry%2Dleading%20context%20window%20of%2010M), so this naïve approach would not even be feasible, and would scale poorly anyway. Fixed allocation cannot accomodate for the dynamic nature of decoding.    
         
-To tackle this issue, vLLM introduces **PagedAttention**, in addition with a **near-zero waste KV cache manager**, and an **efficient sequence scheduler**.
 
 ### vLLM's KV cache manager    
+
+Allocating one large contiguous chunk of memory for a sequence's KV cache leads to a problem known as **internal fragmentation**. This means that the majority of the chunk is unused and unavailable to another process.
+vLLM solves this by splitting memory into fixed-size blocks. These blocks are small contiguous chunks of memory but not necessarily contiguous to one another. They can hold a fixed number of attention vectors depending on their size (block size is discussed in section 7.2 of the [vLLM research paper](https://arxiv.org/pdf/2309.06180)).    
+These blocks are allocated on the fly so a sequence only uses the memory it needs, and internal fragmentation is limited to one block.
+
+<insert diagram of block allocation>
+
+However, blocks are not necessarily contiguous to one another, which would lead to yet another issue known as **external fragmentation**. This happens when a new incoming sequence asks for memory blocks, yet not enough contiguous blocks are available. So the sequence could not be processed, although there is enough memory available on the GPU. A naïve solution would be to enforce contiguity between blocks but it would not be possible as sequences lengths are not known in advance.
+
+<insert problem with making blocks contiguous>
+
+vLLM solves external fragmentation by introducing an indirection with *logical-to-physical block mapping*. The engine manages a block table for each sequence with *contiguous logical blocks*. Tensor-processing frameworks would see these blocks which satisfy the contiguity requirement, but no memory is consumed until physical blocks are actually allocated. This is inspired from virtual memory in OS systems.    
+      
+However, traditional self attention kernels still require tensors to be contiguous in memory, so these could not apply with vLLM's KV cache management. Hence, vLLM implements `PagedAttention`, a block-wise rewriting of self attention.   
+    
+### PagedAttention
+
+Let's go back to the self attention equation and explain what happens during decoding step-by-step.
+
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+$$   
+
+Imagine we are at decoding step $t$, the current token was sampled from the previous step:
+*These are the computations for the first layer and one attention head for the sake of simplicity, however it is easily extensible*     
+*notations: $d_e$ is the embeddding size, $d$ is the projection dimension*
+1. Get the embedding of the current token, $x_t \in \mathbb{R}^{d_e}$, where $d_e$ is the embedding size.
+2. Project the embedding to get the current query, key, and value vectors   
+$$
+\begin{gather}
+  q_t = W_q x_t \in \mathbb{R}^{d},\\
+  k_t = W_k x_t \in \mathbb{R}^{d},\\
+  v_t = W_v x_t \in \mathbb{R}^{d}.
+\end{gather}
+$$    
+3. Concatenate the current key and value vectors $k_t, v_t$ with previous ones $(k_1,...,k_{t-1})$ and $(v_1,...,v_{t-1}) retrieved from the KV cache (if there is no KV cache, recompute these). The results are $K_t, V_t \in \mathbb{R}^{t \times d}$.
+4. Compute the attention scores for the current token $a_t = \text{softmax}\left(\frac{q_t K_t^\top}{\sqrt{d}}\right) \in \mathbb{R}^t$.
+5. Compute the layer output $o_t = a_t V_t \in \mathbb{R}^d$.
+      
+A framework like PyTorch is unable to compute the dot-products of step 4 and 5 on non contiguous tensors. So vLLM splits these per block.    
+Imagine that a block $j$ can hold the key and value vectors of $B$ tokens. You may retrieve $K_j, V_j \in \mathbb{R}^{B \times d}$. Since a block is a contiguous chunk of memory, it is possible to compute the following block-wise dot-product:
+
+$$
+s_j=\text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \in \mathbb{R}^{1 \times B}
+$$
+
+The results are accumulated for each block of the sequence to get the denominator of the softmax $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \in \mathbb{R}^{1 \times B}$. Then we would compute the block-wise attention scores:
+
+$$
+a_j = \frac{s_j}{S}
+$$
+
+Finally, we can compute the dot-product between attention scores and value vectors block-wise, and sum over blocks to get the layer output $o_t$:
+
+$$
+o_t = \sum_j a_j V_j \in \mathbb{R}^d
+$$
+
+That is what **PagedAttention** does. It enables to compute self attention while minimizing external and internal fragmentation. This is the key optimization of vLLM.
+vLLM also developped special CUDA kernels to make PagedAttention more efficient ([previous part](#requesting-the-server) and section 5.1 of the vLLM research paper).
+
+
+
+
+
+
+
+
+
+
+
 
 Instead of pre-allocating one large contiguous chunk of memory, vLLM's KV cache manager splits it in small contiguous memory blocks. These are fixed-size but not necessarily contiguous. A block shall be small enough that it would waste only a tiny fraction of memory if unused, yet large enough to hold at least one semantically meaningful item. The smallest item is a (K, V) pair for one token, so a block may hold at least one pair, hence we could say blocks are *token-granular*. The engine allocates blocks dynamically as the sequence grows.
 However, this approach alone would not enable sharing of token matrices between multiple sequences during decoding, nor would it suit traditional tensor-processing frameworks expecting one big contiguous tensor.    
