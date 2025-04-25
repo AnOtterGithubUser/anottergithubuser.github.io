@@ -374,16 +374,16 @@ This would lead to huge memory wastes, as most sequences would never reach the c
 Allocating one large contiguous chunk of memory for a sequence's KV cache leads to a problem known as **internal fragmentation**. This means that the majority of the chunk is unused and unavailable to another process.
 vLLM solves this by splitting memory into fixed-size blocks. These blocks are small contiguous chunks of memory but not necessarily contiguous to one another. They can hold a fixed number of attention vectors depending on their size (block size is discussed in section 7.2 of the [vLLM research paper](https://arxiv.org/pdf/2309.06180)).    
 These blocks are allocated on the fly so a sequence only uses the memory it needs, and internal fragmentation is limited to one block.
-
-<insert diagram of block allocation>
-
+       
+*insert diagram of block allocation*
+      
 However, blocks are not necessarily contiguous to one another, which would lead to yet another issue known as **external fragmentation**. This happens when a new incoming sequence asks for memory blocks, yet not enough contiguous blocks are available. So the sequence could not be processed, although there is enough memory available on the GPU. A naïve solution would be to enforce contiguity between blocks but it would not be possible as sequences lengths are not known in advance.
-
-<insert problem with making blocks contiguous>
-
+      
+*insert problem with making blocks contiguous*
+       
 vLLM solves external fragmentation by introducing an indirection with *logical-to-physical block mapping*. The engine manages a block table for each sequence with *contiguous logical blocks*. Tensor-processing frameworks would see these blocks which satisfy the contiguity requirement, but no memory is consumed until physical blocks are actually allocated. This is inspired from virtual memory in OS systems.    
       
-However, traditional self attention kernels still require tensors to be contiguous in memory, so these could not apply with vLLM's KV cache management. Hence, vLLM implements `PagedAttention`, a block-wise rewriting of self attention.   
+However, traditional self attention kernels still require tensors to be contiguous in memory, so these could not apply with vLLM's KV cache management. Hence, vLLM implements **PagedAttention**, a block-wise rewriting of self attention.   
     
 ### PagedAttention
 
@@ -405,7 +405,7 @@ $$
   v_t = W_v x_t \in \mathbb{R}^{d}.
 \end{gather}
 $$    
-3. Concatenate the current key and value vectors $k_t, v_t$ with previous ones $(k_1,...,k_{t-1})$ and $(v_1,...,v_{t-1}) retrieved from the KV cache (if there is no KV cache, recompute these). The results are $K_t, V_t \in \mathbb{R}^{t \times d}$.
+3. Concatenate the current key and value vectors $k_t, v_t$ with previous ones $(k_1,...,k_{t-1})$ and $(v_1,...,v_{t-1})$ retrieved from the KV cache (if there is no KV cache, recompute these). The results are $K_t, V_t \in \mathbb{R}^{t \times d}$.
 4. Compute the attention scores for the current token $a_t = \text{softmax}\left(\frac{q_t K_t^\top}{\sqrt{d}}\right) \in \mathbb{R}^t$.
 5. Compute the layer output $o_t = a_t V_t \in \mathbb{R}^d$.
       
@@ -429,7 +429,7 @@ o_t = \sum_j a_j V_j \in \mathbb{R}^d
 $$
 
 That is what **PagedAttention** does. It enables to compute self attention while minimizing external and internal fragmentation. This is the key optimization of vLLM. In order to make PagedAttention more efficient, vLLM also developped specific CUDA kernels ([previous part](#requesting-the-server) and section 5.1 of the vLLM research paper).
-
+      
 ### Continuous batching
 
 In real life scenario, sequences are not handled one by one, but instead are gathered in batches to maximize GPU usage and minimize latency. Batching enables to increase the number of tokens passing through the GPU per second, *i.e the throughput*.   
@@ -443,66 +443,8 @@ In that case, the KV cache of a preempted sequence is deleted and will be recomp
       
 The management of preempted sequences has actually changed in vLLM v1 default behaviour. Instead of swapping blocks to CPU, these are kept in GPU RAM but marked as inactive. This is better for sequence latency but may hurt global throughput. The default may be changed back to swapping from the configuation.
 
+## Conclusion
 
-
-
-
-
-
-
-
-
-
-
-Instead of pre-allocating one large contiguous chunk of memory, vLLM's KV cache manager splits it in small contiguous memory blocks. These are fixed-size but not necessarily contiguous. A block shall be small enough that it would waste only a tiny fraction of memory if unused, yet large enough to hold at least one semantically meaningful item. The smallest item is a (K, V) pair for one token, so a block may hold at least one pair, hence we could say blocks are *token-granular*. The engine allocates blocks dynamically as the sequence grows.
-However, this approach alone would not enable sharing of token matrices between multiple sequences during decoding, nor would it suit traditional tensor-processing frameworks expecting one big contiguous tensor.    
-The core idea behind vLLM's KV cache manager is to use *logical* blocks that map to *physical* ones. This is inspired by virtual memory in operating systems. Distinct logical blocks can point to the same physical blocks to enable sharing. Tensor-processing frameworks would also perceive logical blocks as one large contiguous tensor.
-To make it work, the engine must maintain a *mapping table* to keep track of block references for each sequence. Much like how a Spark driver would keep track of which executor holds which RDD partition of a dataset, across a distributed system.
-This logical-to-physical mapping is the key idea of vLLM. It enables the KV cache to grow dynamically, without pre-allocating physical memory, and to share matrices across multiple sequences during decoding. Virtual blocks may be pre-allocated, but not take any actual space on GPU, until physical blocks are allocated and mapped by the engine.
-       
-      
-### PagedAttention
-
-To understand PagedAttention, let's first come back to the self-attention equation:       
-        
-$$
-\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
-$$     
-
-Focus on what happens at decoding step $t$ (for the first layer and one attention head):     
-1. Get the embedding of the current token $x_t \in \mathbb{R}^{d_e}$, where $d_e$ is the embedding size.
-2. Project the embedding to get the current query, key, and value vectors, with $d$ the projection dimension       
-$$
-\begin{gather}
-  q_t = W_q x_t \in \mathbb{R}^{d},\\
-  k_t = W_k x_t \in \mathbb{R}^{d},\\
-  v_t = W_v x_t \in \mathbb{R}^{d}.
-\end{gather}
-$$      
-3. Concatenate the current key and value vectors $k_t, v_t$ with previous ones $(k_1,...,k_{t-1})$ and $(v_1,...,v_{t-1})$ to get $K_t, V_t \in \mathbb{R}^{t \times d}$. Retrieve the previous vectors from KV-cache if available, otherwise recompute them.
-4. Compute the attention scores for the current token $a_t = \text{softmax}\left(\frac{q_t K_t^\top}{\sqrt{d}}\right) \in \mathbb{R}^t$.
-5. Compute the layer output $o_t = a_t V_t \in \mathbb{R}^d$.
-      
-For the next layers, the steps are essentially the same except the input at step 1 is the output of the previous layer.   
-         
-However, this does not work with non contiguous blocks, because tensor-processing frameworks such as PyTorch cannot perform the dot products of steps 4 and 5.     
-In vLLM, key and value vectors of previous steps for one sequence are stored in blocks in the KV-cache. For each block $j$ holding $B$ tokens, we have $K_j$ and $V_j$, the concatenations of contiguous key vectors, and contiguous value vectors, both in $\mathbb{R}^{B \times d}$.    
-A block being a contiguous memory chunk, we may compute the dot-product $s_j=\text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \in \mathbb{R}^{1 \times B}$ and then sum these for each block $i$ in the sequence to get the block-wise attention score $A_j = \frac{s_j}{\sum_i s_i} \in \mathbb{R}^{1 \times B}$. Finally, we sum the partial weighted sums of value vectors of each block, to get the final output, $o_t = \sum_j A_j V_j \in \mathbb{R}^{1 \times d}$.     
-This is **PagedAttention**, a block-wise decomposition of the self attention equation.
-               
-vLLM developped specific kernels, *i.e functions to perform computations on GPU*, in order to implement PagedAttention efficiently.
-      
-
-### Sequence scheduler
-
-In real-life conditions, we would process sequences in batches to maximize GPU utilization and minimize latency for users.      
-A naïve implementation would pre-allocate the maximum possible output length for each sequence in the batch. This would lead to huge memory wastes, as the majority of sequences are likely to complete way before reaching this limit. With current context windows of up to 10M tokens, it would simply be impossible to allocate enough memory. vLLM avoids this pitfall with logical-to-physical block mapping and PagedAttention, leaving more memory for sequences to be processed.    
-Naïvely scheduling batches at sequence-level would still be very inefficient. This would mean waiting for enough sequences to arrive to process a batch, and new incoming sequences would have to wait for the whole batch to finish. Hence, vLLM's scheduler implements iteration-level scheduling. At each decoding step, the scheduler removes completed sequences from the batch and add new ones, always trying to maximize GPU utilization. This results in what is called   **continuous batching**, the batch size varies with incoming and outcoming sequences (you may also see **in-flight** or **dynamic batching**, these are the same thing).    
-These optimizations achieve near-optimal memory usage and significantly increase vLLM's throughtput in batch processing.       
-      
-Now what happens when there are simply too many incoming sequences?     
-In this case, vLLM implements a first-in-first-out type policy. Low priority sequences may be evicted from GPU if it is at capacity. In this case, their KV-cache blocks are sent to CPU to await processing. Once earlier sequences complete, the evicted sequence's blocks are sent back to GPU to resume generation. vLLM does not accept new incoming sequences until evicted sequences are swapped back and completed.  
-Thus CPU memory space is also bounded, and some evicted sequences' blocks are simply deleted when running out of CPU RAM. In this case, the KV cache for these sequences is recomputed when GPU memory is available again.    
-An evicted sequence is composed of the initial prompt plus tokens generated before eviction. As all tokens are known, it can be considered as one larger prompt and KV cache may be recomputed in parallel, similar to the pre-fill phase. Although it still adds latency, it is much faster than sequential processing during decoding.
-
-#TODO: vLLM has been integrated in Hugging Face Hub
+vLLM is an efficient and easy to use library for serving large language models. Hugging Face has recently announced that all the models on the Hub will benefit from vLLM backend. It is changing fast and recent upgrades like V1 keep adding optimizations.   
+The competition is fierce with new algorithms like RaddixAttention implemented in SGLand, adding further optimizations. Given the computation bound aspects of LLM inference, some companies are designing their own hardware with more memory, like Groq LPUs or Cerebra's wafers. These overcome the memory constraint and reach up to 1000 tokens/s.    
+However, given its performance and its ease of use on readily available and widespread hardware, vLLM remains a major actor.
