@@ -428,8 +428,20 @@ $$
 o_t = \sum_j a_j V_j \in \mathbb{R}^d
 $$
 
-That is what **PagedAttention** does. It enables to compute self attention while minimizing external and internal fragmentation. This is the key optimization of vLLM.
-vLLM also developped special CUDA kernels to make PagedAttention more efficient ([previous part](#requesting-the-server) and section 5.1 of the vLLM research paper).
+That is what **PagedAttention** does. It enables to compute self attention while minimizing external and internal fragmentation. This is the key optimization of vLLM. In order to make PagedAttention more efficient, vLLM also developped specific CUDA kernels ([previous part](#requesting-the-server) and section 5.1 of the vLLM research paper).
+
+### Continuous batching
+
+In real life scenario, sequences are not handled one by one, but instead are gathered in batches to maximize GPU usage and minimize latency. Batching enables to increase the number of tokens passing through the GPU per second, *i.e the throughput*.   
+However, using fixed-size batches of $S$ sequences would be quite inefficient. Indeed, the batch processing speed would be limited by its largest sequence, waiting for its completion to return the output for all sequences. Introducing micro-batches of different sizes would limit this issue, but not solve it.    
+First, vLLM uses iteration-level scheduling, meaning that batches are formed at the token level. At each decoding step, the scheduler selects a batch of tokens in the queue to run. Each sequence may contribute only one token. The number of tokens may vary between step, with an upper bound `max_num_batched_tokens`. Hence, the batch size is elastic and batches are token-level. This allows shorter sequences to be returned as soon as they are complete, and directly process new incoming sequences. This approach is called **continuous batching**.    
+During prompt processing, sequences may contribute more than one token each. vLLM chunks prompt to accomodate the budget.
+      
+However, there may be spikes of traffic where there are just too many incoming sequences to handle. In that case, vLLM prioritizes earlier sequences, and as these grow, GPU memory may run out. In that case, vLLM may evict blocks from other sequences from the KV cache to make room. Blocks are always evicted at sequence-level. Sequences whose blocks are evicted are called *preempted*.
+When blocks are evicted, they may be swapped to CPU. vLLM maintains a KV cache on CPU for this purpose. The blocks are swapped back to GPU earlier sequences finish and memory is available again. However, CPU memory is also bound. Once blocks are evicted and put into CPU, vLLM stops accepting new incoming sequences. So CPU KV cache size may never exceed GPU cache.   
+In that case, the KV cache of a preempted sequence is deleted and will be recomputed entirely once the sequence is re-scheduled. The recomputation takes advantage of GPU parallelism and is much faster than the initial generation.
+      
+The management of preempted sequences has actually changed in vLLM v1 default behaviour. Instead of swapping blocks to CPU, these are kept in GPU RAM but marked as inactive. This is better for sequence latency but may hurt global throughput. The default may be changed back to swapping from the configuation.
 
 
 
