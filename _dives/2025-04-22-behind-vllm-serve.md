@@ -66,7 +66,7 @@ The command calls a script that relies on vllm CLI. This script is defined in [`
 The entrypoints is in [`vllm/vllm/entrypoints/cli/main.py`](vllm/vllm/entrypoints/cli/main.py) which is a dispatch for the subcommands of the command line (`serve`, `openai`, `benchmark.main`, `collect_env`). The user command would run the `serve` subcommand with the positional argument `'mistralai/Mistral-Small-3.1-24B-Instruct-2503'`.    
       
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>[`vllm/entrypoints/cli/serve.py`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/cli/serve.py)</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/cli/serve.py">vllm/entrypoints/cli/serve.py</a></code></figcaption>
 {% highlight python %}
 ...
 8  from vllm.entrypoints.openai.api_server import run_server
@@ -91,7 +91,7 @@ The entrypoints is in [`vllm/vllm/entrypoints/cli/main.py`](vllm/vllm/entrypoint
 It passes the argument to a `run_server` function which runs in an asyncio event loop. This function essentially builds a FastAPI application and injects the core components of vLLM in its state.    
        
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>[`vllm/entrypoints/openai/api_server.py`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py)</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py">vllm/entrypoints/openai/api_server.py</a></code></figcaption>
 {% highlight python %}
 1041 async def run_server(args, **uvicorn_kwargs) -> None:
 ...      
@@ -107,7 +107,7 @@ It passes the argument to a `run_server` function which runs in an asyncio event
 The core logic is implement in the engine client. It is an asynchronous client provided in a context manager. Following the stack trace, it is initialized in the `build_async_engine_client` function, which essentially calls the `build_async_engine_client_from_engine_args` function of the same file.   
 
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py">vllm/entrypoints/openai/api_server.py</a></code></figcaption>
 {% highlight python %}
 138 @asynccontextmanager
 139 async def build_async_engine_client(
@@ -162,7 +162,7 @@ vLLM V1 released its alpha in January 2025 and introduces significant upgrades w
 `AsyncLLM` is a client which wraps the core engine of vLLM. Its core attribute is the `engine_core` which is an instance of `AsyncMPClient`. This object creates a `CoreEngine` which will run an `EngineCore` in a background process. The `EngineCore` is the main component of vLLM, as its name suggests.
 
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/v1/engine/core.py</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/engine/core.py">vllm/v1/engine/core.py</a></code></figcaption>
 {% highlight python %}
 47 class EngineCore:
 48     """Inner loop of vLLM's Engine."""
@@ -253,6 +253,12 @@ Let's assume the user does not have a specific configuration and runs the comman
            
 The download may take a while depending on the model and the user's bandwidth. In this case, `Mistral-Small-3.1-24B-Instruct-2503` represents about 50Go of safetensors weights. Once the download is complete, the weights will be stored in this folder `~/.cache/huggingface/hub/Mistral-Small-3.1-24B-Instruct-2503` on the machine for a faster next initialization. The worker will then load the weights on the GPU.    
 Once the workers are ready, and the core components of the engine are setup, the server will finally start to accept incoming requests.
+        
+<p align="center">
+  <img src="/assets/images/vllm_engine_start.png" alt="Call stack of vllm engine initilization" />
+  <em style="font-size: 0.8em;">Figure 1. Call stack for vllm engine initialization. Hugging Face ® is a trademark of Hugging Face Inc. This blog is not affiliated or sponsored by Hugging Face.</em>
+</p>
+         
 
 ### Requesting the server
 
@@ -286,7 +292,7 @@ Since, vLLM mimics OpenAI Chat Completions API, it can be used as a drop-in repl
 The user's application is now calling the `v1/chat/completions` route on vLLM's server via LangChain. This will call the [`create_chat_completion`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py#L470) function that will return a `StreamingResponse`. The user will thus received the output chunk by chunk until completion, which minimizes the wait for interaction.    
    
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/entrypoints/openai/api_server.py</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py">vllm/entrypoints/openai/api_server.py</a></code></figcaption>
 {% highlight python %}
 305 router = APIRouter()
 ...     
@@ -319,7 +325,7 @@ The core logic of generation resides in the engine client that was initialized a
 The executor then passes the request along until the model runner where it is transformed to the model's excepted input format. The [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L1077) finally executes the model forward pass with this input. The forward pass happens within a context which sets up the backend for the attention computation. vLLM supports [several backends](https://docs.vllm.ai/en/latest/getting_started/quickstart.html#on-attention-backends) for attention, and selects the most relevant one given the system, hardware, and model specification.     
 
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>vllm/vllm/v1/worker/gpu_model_runner.py</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">vllm/vllm/v1/worker/gpu_model_runner.py</a></code></figcaption>
 {% highlight python %}
 996  @torch.inference_mode()
 997  def execute_model(
@@ -344,6 +350,12 @@ The executor then passes the request along until the model runner where it is tr
 Almost all of these backends call the [PagedAttention](https://github.com/vllm-project/vllm/blob/main/vllm/attention/ops/paged_attn.py) operation, when running on supported hardware. PagedAttention was developped by the vLLM's team to optimize self attention for LLM inference. They defined it as a custom operation and implemented specific CUDA kernels to support it. CUDA kernels are functions that run on NVidia GPUs.       
          
 Honestly, this is where things get too technical for me. The CUDA kernels are implemented in [`csrc/attention/`](https://github.com/vllm-project/vllm/tree/main/csrc/attention) and the bindings are defined in [`csrc/torch_bindings.cpp`](https://github.com/vllm-project/vllm/blob/main/csrc/torch_bindings.cpp), to be used in the forward context. I expect most people would not need to touch that unless they are looking to optimize low-level logic for a few milli-seconds.    
+         
+<p align="center">
+  <img src="/assets/images/vllm_engine_generate.png" alt="Call stack for vllm generation" />
+  <em style="font-size: 0.8em;">Figure 2. Call stack for vllm generation</em>
+</p>
+         
 
 
 ## Understanding vLLM optimizations
@@ -375,14 +387,25 @@ Allocating one large contiguous chunk of memory for a sequence's KV cache leads 
 vLLM solves this by splitting memory into fixed-size blocks. These blocks are small contiguous chunks of memory but not necessarily contiguous to one another. They can hold a fixed number of attention vectors depending on their size (block size is discussed in section 7.2 of the [vLLM research paper](https://arxiv.org/pdf/2309.06180)).    
 These blocks are allocated on the fly so a sequence only uses the memory it needs, and internal fragmentation is limited to one block.
        
-*insert diagram of block allocation*
+<p align="center">
+  <img src="/assets/images/block_internal_fragmentation.png" alt="Internal fragmentation" />
+  <em style="font-size: 0.8em;">Figure 3. Example of internal fragmentation. Reserved spaces are unused and unavailable for other sequences</em>
+</p>
       
 However, blocks are not necessarily contiguous to one another, which would lead to yet another issue known as **external fragmentation**. This happens when a new incoming sequence asks for memory blocks, yet not enough contiguous blocks are available. So the sequence could not be processed, although there is enough memory available on the GPU. A naïve solution would be to enforce contiguity between blocks but it would not be possible as sequences lengths are not known in advance.
-      
-*insert problem with making blocks contiguous*
-       
+
+<p align="center">
+  <img src="/assets/images/block_external_fragmentation.png" alt="Example of external fragmentation" />
+  <em style="font-size: 0.8em;">Figure 4. Example of external fragmentation. The allocator cannot provide contiguous blocks although there is enough free memory.</em>
+</p>
+
 vLLM solves external fragmentation by introducing an indirection with *logical-to-physical block mapping*. The engine manages a block table for each sequence with *contiguous logical blocks*. Tensor-processing frameworks would see these blocks which satisfy the contiguity requirement, but no memory is consumed until physical blocks are actually allocated. This is inspired from virtual memory in OS systems.    
       
+<p align="center">
+  <img src="/assets/images/logical_blocks.png" alt="Example of external fragmentation" />
+  <em style="font-size: 0.8em;">Figure 5. Logical-to-physical block mapping. The allocator sees logical blocks as contiguous and can allocate them for the incoming sequence.</em>
+</p>
+         
 However, traditional self attention kernels still require tensors to be contiguous in memory, so these could not apply with vLLM's KV cache management. Hence, vLLM implements **PagedAttention**, a block-wise rewriting of self attention.   
     
 ### PagedAttention
