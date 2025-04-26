@@ -195,7 +195,7 @@ figure {
   -webkit-box-align: start;
   align-items: flex-start;
   flex-wrap: wrap;
-  margin: 2em 0;
+  margin: 0.1em 0;
 
   img,
   iframe,
@@ -255,6 +255,29 @@ figcaption {
 
     &:hover {
       color: $link-color-hover;
+    }
+  }
+}
+
+/* Custom fixed width for code blocks inside figure */
+figure.custom-code-block {
+  display: block;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+  padding: 0 1em;
+
+  pre {
+    overflow-x: auto;
+    padding: 1em;
+    font-size: 0.95em;
+  }
+
+  @include breakpoint($small) {
+    pre {
+      font-size: 0.85em;
+      padding: 0.75em;
     }
   }
 }
