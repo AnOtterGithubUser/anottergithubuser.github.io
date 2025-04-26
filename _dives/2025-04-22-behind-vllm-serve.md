@@ -56,7 +56,7 @@ vllm serve mistralai/Mistral-Small-3.1-24B-Instruct-2503
 The command calls a script that relies on vllm CLI. This script is defined in [`vllm/pyproject.toml`](https://github.com/vllm-project/vllm/blob/main/pyproject.toml) at the root of the repository. This kind of file is used with popular project management tools like [Poetry](https://python-poetry.org/) to act as a central configuration for settings, dependencies, scripts, and more.    
      
 <figure class="custom-code-block">
-  <figcaption style="margin-bottom: 0.2em;"><code>[`vllm/pyproject.toml`](https://github.com/vllm-project/vllm/blob/main/pyproject.toml)</code></figcaption>
+  <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/pyproject.toml">pyproject.toml</a></code></figcaption>
 {% highlight yaml %}
 41 [project.scripts]
 42 vllm = "vllm.entrypoints.cli.main:main"
@@ -470,7 +470,7 @@ However, vLLM has recently introduced *chunked prefill*, which enables to tune t
 The token budget and chunked prefills size may be tuned to reach a trade-off between TTFT and ITL depending on the developer's needs.   
 Among prefill and decoding, vLLM implements a first-in-first-out policy, meaning that older sequences are processed first.     
          
-These optimizations have increased the throughput, *i.e the number of tokens processed per seconds on GPU*, up to a [factor of 23](https://www.anyscale.com/blog/continuous-batching-llm-inference#pagedattention-and-vllm)!
+These optimizations have increased the throughput, *i.e the number of tokens processed per seconds on GPU*, [up to a factor of 23](https://www.anyscale.com/blog/continuous-batching-llm-inference#pagedattention-and-vllm)!
 
 ### Sequence preemption
 
