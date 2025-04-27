@@ -36,10 +36,10 @@ This simplicity masks the optimizations implemented under the hood. You might be
 
 <p>
 <em>
-This post is divided in two parts<br>    
+This post is divided into two parts<br>    
 - <strong>`vllm serve` walkthrough</strong> is a step-by-step walk through the code of vLLM from the command execution to the core components<br>
 - <strong>Understanding vLLM optimizations</strong> is an in-depth explanation of the theory behind the optimizations of vLLM<br>
-The parts are largely independant
+The parts are largely independent
 </em>
 </p>     
       
@@ -63,7 +63,7 @@ The command calls a script that relies on vllm CLI. This script is defined in [`
 {% endhighlight %}
 </figure>
      
-The entrypoints is in [`vllm/vllm/entrypoints/cli/main.py`](vllm/vllm/entrypoints/cli/main.py) which is a dispatch for the subcommands of the command line (`serve`, `openai`, `benchmark.main`, `collect_env`). The user command would run the `serve` subcommand with the positional argument `'mistralai/Mistral-Small-3.1-24B-Instruct-2503'`.    
+The entrypoint is in [`vllm/vllm/entrypoints/cli/main.py`](vllm/vllm/entrypoints/cli/main.py) which is a dispatch for the subcommands of the command line (`serve`, `openai`, `benchmark.main`, `collect_env`). The user command would run the `serve` subcommand with the positional argument `'mistralai/Mistral-Small-3.1-24B-Instruct-2503'`.    
       
 <figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/cli/serve.py">vllm/entrypoints/cli/serve.py</a></code></figcaption>
@@ -104,7 +104,7 @@ It passes the argument to a `run_server` function which runs in an asyncio event
 {% endhighlight %}   
 </figure>   
      
-The core logic is implement in the engine client. It is an asynchronous client provided in a context manager. Following the stack trace, it is initialized in the `build_async_engine_client` function, which essentially calls the `build_async_engine_client_from_engine_args` function of the same file.   
+The core logic is implemented in the engine client. It is an asynchronous client provided in a context manager. Following the stack trace, it is initialized in the `build_async_engine_client` function, which essentially calls the `build_async_engine_client_from_engine_args` function of the same file.   
 
 <figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py">vllm/entrypoints/openai/api_server.py</a></code></figcaption>
@@ -242,20 +242,20 @@ vLLM V1 released its alpha in January 2025 and introduces significant upgrades w
 {% endhighlight %}   
 </figure> 
     
-A lot is happening during initialization, among which the KV cache and scheduler setup. We will take about these later, as they are vLLM's key optimizations.   
+A lot is happening during initialization, among which the KV cache and scheduler setup. We will talk about these later, as they are vLLM's key optimizations.   
 The `EngineCore` requires an executor to actually run the model. The executor subclass depends on the number of GPUs available on the user's machine and their configuration. The executor is in charge of setting up the workers on the device.       
-The default for one GPU is a [`UniProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/abstract.py#L98). For several GPU on one node (one machine), the executor class is [`MultiProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/multiproc_executor.py). Then, for several nodes, required for very large models like Mixtral 8x22B (~280G), it would resort to a [`RayDistributedExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/ray_distributed_executor.py#L27). In our case the model weights are about 50G, so the user should better run it on a machine with several GPUs, or one A100 80G (it would fit yet be a bit tight). Let's assume the user has several A10G GPUs, hence vLLM would use a `MultiProcExecutor`.    
+The default for one GPU is a [`UniProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/abstract.py#L98). For several GPUs on one node (one machine), the executor class is [`MultiProcExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/multiproc_executor.py). Then, for several nodes, required for very large models like Mixtral 8x22B (~280G), it would resort to a [`RayDistributedExecutor`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/executor/ray_distributed_executor.py#L27). In our case the model weights are about 50GB, so the user should better run it on a machine with several GPUs, or one A100 80G (it would fit yet be a bit tight). Let's assume the user has several A10G GPUs, hence vLLM would use a `MultiProcExecutor`.    
          
 Assuming the user runs the command on a machine with several GPUs, the executor will start several instances of [`GPUWorker`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_worker.py), one for each GPU. Each worker requires a runner for the model, in this case a [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L62). The runner starts by loading the model on the device thanks to a model loader.     
 Now, several implementations of the model loader are defined depending on the format of the model weights (`DummyModelLoader`, `TensorizerLoader`, `ShardedStateLoader`, `BitsAndBytesModelLoader`, `GGUFModelLoader`, `RunaiModelStreamerLoader`, `ShardedStateLoader`, `DefaultModelLoader`). The appropriate one will be selected depending on the user's choice and configuration, in the [`get_model_loader`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L1516) function.   
          
 Let's assume the user does not have a specific configuration and runs the command without any other argument. Hence, the loader will be (`DefaultModelLoader`)[https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/loader.py#L210]. It will get the model path passed in the CLI parameters `'mistralai/Mistral-Small-3.1-24B-Instruct-2503'`. Assuming again that this is the first time the user runs this command on the machine, the loader will download the model weights from Hugging Face Hub ([`download_weights_from_hf`](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/model_loader/weight_utils.py#L228)). It will perform a direct API call via the `snapshot_download` function of `huggingface_hub` library to get the weights.     
            
-The download may take a while depending on the model and the user's bandwidth. In this case, `Mistral-Small-3.1-24B-Instruct-2503` represents about 50Go of safetensors weights. Once the download is complete, the weights will be stored in this folder `~/.cache/huggingface/hub/Mistral-Small-3.1-24B-Instruct-2503` on the machine for a faster next initialization. The worker will then load the weights on the GPU.    
+The download may take a while depending on the model and the user's bandwidth. In this case, `Mistral-Small-3.1-24B-Instruct-2503` represents about 50GB of safetensors weights. Once the download is complete, the weights will be stored in this folder `~/.cache/huggingface/hub/Mistral-Small-3.1-24B-Instruct-2503` on the machine for a faster next initialization. The worker will then load the weights on the GPU.    
 Once the workers are ready, and the core components of the engine are setup, the server will finally start to accept incoming requests.
         
 <p align="center">
-  <img src="/assets/images/vllm_engine_start.png" alt="Call stack of vllm engine initilization" />
+  <img src="/assets/images/vllm_engine_start.png" alt="Call stack of vllm engine initialization" />
   <em style="font-size: 0.8em;">Figure 1. Call stack for vllm engine initialization. Hugging Face ® is a trademark of Hugging Face Inc. This blog is not affiliated or sponsored by Hugging Face.</em>
 </p>
          
@@ -289,7 +289,7 @@ For a chatbot that keeps a conversation history for dynamic conversations, you w
        
 Since, vLLM mimics OpenAI Chat Completions API, it can be used as a drop-in replacement for OpenAI models easily. Assuming the application used the [`ChatOpenAI`](https://python.langchain.com/docs/integrations/chat/openai/) object from LangChain, the user would simply need to change the `base_url` parameter to the URL of the server where vLLM is running.
          
-The user's application is now calling the `v1/chat/completions` route on vLLM's server via LangChain. This will call the [`create_chat_completion`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py#L470) function that will return a `StreamingResponse`. The user will thus received the output chunk by chunk until completion, which minimizes the wait for interaction.    
+The user's application is now calling the `v1/chat/completions` route on vLLM's server via LangChain. This will call the [`create_chat_completion`](https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py#L470) function that will return a `StreamingResponse`. The user will thus receive the output chunk by chunk until completion, which minimizes the wait for interaction.    
    
 <figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/entrypoints/openai/api_server.py">vllm/entrypoints/openai/api_server.py</a></code></figcaption>
@@ -322,7 +322,7 @@ The user's application is now calling the `v1/chat/completions` route on vLLM's 
    
 The core logic of generation resides in the engine client that was initialized at launch. It is implemented in the `AsyncLLM` class. The client leverages the engine core to add the user's request to the queue. The scheduler then reviews queued requests and schedules them for completion (I will talk about scheduling in the second part of the post).      
          
-The executor then passes the request along until the model runner where it is transformed to the model's excepted input format. The [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L1077) finally executes the model forward pass with this input. The forward pass happens within a context which sets up the backend for the attention computation. vLLM supports [several backends](https://docs.vllm.ai/en/latest/getting_started/quickstart.html#on-attention-backends) for attention, and selects the most relevant one given the system, hardware, and model specification.     
+The executor then passes the request along until the model runner where it is transformed to the model's expected input format. The [`GPUModelRunner`](https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py#L1077) finally executes the model forward pass with this input. The forward pass happens within a context which sets up the backend for the attention computation. vLLM supports [several backends](https://docs.vllm.ai/en/latest/getting_started/quickstart.html#on-attention-backends) for attention, and selects the most relevant one given the system, hardware, and model specification.     
 
 <figure class="custom-code-block">
   <figcaption style="margin-bottom: 0.2em;"><code><a href="https://github.com/vllm-project/vllm/blob/main/vllm/v1/worker/gpu_model_runner.py">vllm/vllm/v1/worker/gpu_model_runner.py</a></code></figcaption>
@@ -347,7 +347,7 @@ The executor then passes the request along until the model runner where it is tr
 {% endhighlight %}   
 </figure> 
 
-Almost all of these backends call the [PagedAttention](https://github.com/vllm-project/vllm/blob/main/vllm/attention/ops/paged_attn.py) operation, when running on supported hardware. PagedAttention was developped by the vLLM's team to optimize self attention for LLM inference. They defined it as a custom operation and implemented specific CUDA kernels to support it. CUDA kernels are functions that run on NVidia GPUs.       
+Almost all of these backends call the [PagedAttention](https://github.com/vllm-project/vllm/blob/main/vllm/attention/ops/paged_attn.py) operation when running on supported hardware. PagedAttention was developed by the vLLM's team to optimize self attention for LLM inference. They defined it as a custom operation and implemented specific CUDA kernels to support it. CUDA kernels are functions that run on NVidia GPUs.       
          
 Honestly, this is where things get too technical for me. The CUDA kernels are implemented in [`csrc/attention/`](https://github.com/vllm-project/vllm/tree/main/csrc/attention) and the bindings are defined in [`csrc/torch_bindings.cpp`](https://github.com/vllm-project/vllm/blob/main/csrc/torch_bindings.cpp), to be used in the forward context. I expect most people would not need to touch that unless they are looking to optimize low-level logic for a few milli-seconds.    
          
@@ -362,11 +362,11 @@ Honestly, this is where things get too technical for me. The CUDA kernels are im
 
 ### KV cache management
        
-In my [previous post]({{ site.url }}/peeks/llm-inference-engines-servers/), I explained how LLM inference is mostly **memory-bound**. In details, generating an answer consists in two phases:   
-- Prefill-phase (*Prompt processing*): Compute the attention vectors for each token in the prompt. This phase is actually **compute-bound**, but fast as it takes advantage of GPU parallelism.
-*e.g. It is the time before the first token appears in ChatGPT*
-- Decoding phase (*Generation*): Generate tokens sequentially from the prompt. Computations cannot be run in parallel and the attention vectors for each new token shall be cached to avoid redundant computation at every step. Since the number of such vectors grows linearily with the length of the sequence, this phase is **memory-bound**. It amounts for most of the latency.
-*e.g. It is the time from when the first token appears until the answer is complete*  
+In my [previous post]({{ site.url }}/peeks/llm-inference-engines-servers/), I explained how LLM inference is mostly **memory-bound**. In more detail, generating an answer consists in two phases:   
+- Prefill-phase (*Prompt processing*): Compute the attention vectors for each token in the prompt. This phase is actually **compute-bound**, but fast as it takes advantage of GPU parallelism.     
+*e.g, It is the time before the first token appears in ChatGPT*
+- Decoding phase (*Generation*): Generate tokens sequentially from the prompt. Computations cannot be run in parallel and the attention vectors for each new token shall be cached to avoid redundant computation at every step. Since the number of such vectors grows linearly with the length of the sequence, this phase is **memory-bound**. It accounts for most of the latency.    
+*e.g, It is the time from when the first token appears until the answer is complete*  
       
 Since the decoding phase usually dominates latency, LLM inference is often said to be **memory-bound**.
      
@@ -378,7 +378,7 @@ $$
 
 KV cache management is key in improving decoding latency and handling growing sequences. However, there is no way to know in advance how long a sequence will be.     
 A naïve implementation would try to allocate the maximum memory the LLM would need for a sequence, which is the model's context window. Since tensor-processing frameworks such as PyTorch require tensors to be contiguous in memory, it would pre-allocate a huge contiguous chunk of GPU RAM.    
-This would lead to huge memory wastes, as most sequences would never reach the current context windows lengths. These went from usually 2048 tokens in early 2023 open-source models, to up to 1 million now with the latest Llama 4 models. Llama 4 Scout even advertized a [10 million tokens context window](https://ai.meta.com/blog/llama-4-multimodal-intelligence/#:~:text=Llama%204%20Scout%20offers%20an%20industry%2Dleading%20context%20window%20of%2010M), so this naïve approach would not even be feasible, and would scale poorly anyway. Fixed allocation cannot accomodate for the dynamic nature of decoding.    
+This would lead to huge memory wastes, as most sequences would never reach the current context windows lengths. These went from usually 2048 tokens in early 2023 open-source models, to up to 1 million now with the latest Llama 4 models. Llama 4 Scout even advertised a [10 million tokens context window](https://ai.meta.com/blog/llama-4-multimodal-intelligence/#:~:text=Llama%204%20Scout%20offers%20an%20industry%2Dleading%20context%20window%20of%2010M), so this naïve approach would not even be feasible, and would scale poorly anyway. Fixed allocation cannot accommodate the dynamic nature of decoding.    
         
 
 ### vLLM's KV cache manager    
@@ -418,8 +418,8 @@ $$
 
 Imagine we are at decoding step $t$, the current token was sampled from the previous step:
 *These are the computations for the first layer and one attention head for the sake of simplicity, however it is easily extensible*     
-*notations: $d_e$ is the embeddding size, $d$ is the projection dimension*
-1. Get the embedding of the current token, $x_t \in \mathbb{R}^{d_e}$, where $d_e$ is the embedding size.
+*notations: $d_e$ is the embedding size, $d$ is the projection dimension*
+1. Get the embedding of the current token, $x_t \in \mathbb{R}^{d_e}$.
 2. Project the embedding to get the current query, key, and value vectors   
 $$
 \begin{gather}
@@ -432,7 +432,7 @@ $$
 4. Compute the attention scores for the current token $a_t = \text{softmax}\left(\frac{q_t K_t^\top}{\sqrt{d}}\right) \in \mathbb{R}^t$.
 5. Compute the layer output $o_t = a_t V_t \in \mathbb{R}^d$.
       
-A framework like PyTorch is unable to compute the dot-products of step 4 and 5 on non contiguous tensors. So vLLM splits these per block.    
+A framework like PyTorch is unable to compute the dot-products of step 4 and 5 on non-contiguous tensors. So vLLM splits these per block.    
 Imagine that a block $j$ can hold the key and value vectors of $B$ tokens. You may retrieve $K_j, V_j \in \mathbb{R}^{B \times d}$. Since a block is a contiguous chunk of memory, it is possible to compute the following block-wise dot-product:
 
 $$
@@ -457,7 +457,7 @@ That is what **PagedAttention** does. It enables to compute self attention while
 
 When serving several users, sequences are processed in groups instead of sequentially, to maximize GPU utilization and minimize latency for each user. This approach is very common in machine learning and is known as **batching**.     
       
-Most serving systems use **fixed-size batching**, *e.g an offline image recognition software*. In this case, the outputs are returned once every item in the batch has been processed. However, this is not suited to decoding sequences due to the auto-regressive nature of LLM. Since the output length of a sequence is not known in advance, it could make shorter sequences wait for longer sequences in the batch to finish, leaving the GPU idle and increasing latency.       
+Most serving systems use **fixed-size batching**, *e.g, an offline image recognition software*. In this case, the outputs are returned once every item in the batch has been processed. However, this is not suited to decoding sequences due to the auto-regressive nature of LLM. Since the output length of a sequence is not known in advance, it could make shorter sequences wait for longer sequences in the batch to finish, leaving the GPU idle and increasing latency.       
 Although introducing micro-batches of sequences with varying batch size would mitigate the issue, as it would limit it to each micro-batch, it would still not solve the underlying problem.    
      
 To tackle this problem, vLLM implements **iteration-level scheduling**, an approach introduced by [Orca](https://www.usenix.org/conference/osdi22/presentation/yu). Instead of scheduling entire sequences for processing, vLLM schedules a batch of tokens at each decoding step. The batch size may change depending on incoming traffic, and tokens may come from different sequences between consecutive batches. This enables to return a sequence output directly upon completion, and introduce tokens from another sequence at the next iteration. This approach is a key optimization of vLLM called **continuous batching**.        
@@ -465,12 +465,12 @@ The `max_num_batched_tokens` parameter of the engine defines the budget (or maxi
      
 Now, how does each sequence contribute to this budget?     
 Remember that LLM inference consists in two steps: prefill (prompt encoding) and decode (output generation). I previously described prefill as the time before the first token appears in ChatGPT. This is actually a metric called TTFT, *i.e Time To First Token*. Decoding, on the other hand, is the time from first token until completion. The time between each decoding step is called ITL, *i.e Inter Token Latency*.       
-At prefill, a sequence may contribute as many tokens as the context window (`max_model_len` parameter). However, during decoding, each sequence may contribute only one token. By default, vLLM's scheduler prioritizes prefill, meaning incoming prompts are scheduled before already running sequences and may interrupt decoding. In this case, prefill and decode tokens always run in different batches. This means that vLLM's default behaviour favorises TTFT over ITL.   
+At prefill, a sequence may contribute as many tokens as the context window (`max_model_len` parameter). However, during decoding, each sequence may contribute only one token. By default, vLLM's scheduler prioritizes prefill, meaning incoming prompts are scheduled before already running sequences and may interrupt decoding. In this case, prefill and decode tokens always run in different batches. This means that vLLM's default behaviour favours TTFT over ITL.   
 However, vLLM has recently introduced *chunked prefill*, which enables to tune the scheduler's behaviour towards better ITL. When the `--enable-chunked-prefill` flag is passed to the engine, prompts are split into fixed size chunks of tokens and decoding now takes priority. Prefill and decode tokens may also be mixed in the same batch. This means that at each GPU cycle, tokens from running sequences are scheduled in priority, and chunked prefills may use the remaining budget, if any.     
 The token budget and chunked prefills size may be tuned to reach a trade-off between TTFT and ITL depending on the developer's needs.   
 Among prefill and decoding, vLLM implements a first-in-first-out policy, meaning that older sequences are processed first.     
          
-These optimizations have increased the throughput, *i.e the number of tokens processed per seconds on GPU*, [up to a factor of 23](https://www.anyscale.com/blog/continuous-batching-llm-inference#pagedattention-and-vllm)!
+These optimizations have increased the throughput, *i.e the number of tokens processed per second on GPU*, [up to a factor of 23](https://www.anyscale.com/blog/continuous-batching-llm-inference#pagedattention-and-vllm)!
 
 ### Sequence preemption
 
@@ -485,5 +485,5 @@ The number of CPU blocks is now set to 0 in [`vllm/v1/engine/core.py`](https://g
 
 Although I went deeper in this post, there would still be much to say about vLLM. It is a fast-evolving framework and the release of V1 introduced many upgrades and changes in behaviours. I believe it is a great project that enables developers to serve LLMs with minimal latency, thus making possible to build a wider range of applications. To make it even better, [Hugging Face has recently announced that all the models in the Hub can now be deployed with vLLM](https://www.linkedin.com/posts/julienchaumond_this-is-a-much-bigger-deal-than-one-could-activity-7318742943459147778-MgMs?utm_source=share&utm_medium=member_desktop&rcm=ACoAABsqXTsBJhKPZFojYvLYo41bO3f4x-E1Or8).         
 There are of course (fortunately even) alternatives like TGI and Triton+TensorRT-LLM which I previously mentionned. SGLang is another interesting serving framework for LLMs. It is a more recent project that introduces **RadixAttention**, another algorithm to optimize self attention during LLM inference.     
-There are also innovations on the hardware level. Companies like Groq and Cerebra, and even AWS, have introduced LLM-specific chips with very promising perspectives: [Cerebra has reached up to 1100 token/s with mistral models](https://www.cerebras.ai/blog/mistral-le-chat).     
-Thanks for reading!
+There are also innovations on the hardware level. Companies like Groq and Cerebras, and even AWS, have introduced LLM-specific chips with very promising perspectives: [Cerebras has reached up to 1100 token/s with mistral models](https://www.cerebras.ai/blog/mistral-le-chat).     
+Well that was a long post, thank you for reading it!
