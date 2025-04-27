@@ -373,7 +373,7 @@ Since the decoding phase usually dominates latency, LLM inference is often said 
 During decoding, only the key and value vectors are cached, as previous queries are never re-used. Here is the self attention equation for reference:
 
 $$
-\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d}}\right)V
 $$   
 
 KV cache management is key in improving decoding latency and handling growing sequences. However, there is no way to know in advance how long a sequence will be.     
@@ -413,7 +413,7 @@ However, traditional self attention kernels still require tensors to be contiguo
 Let's go back to the self attention equation and explain what happens during decoding step-by-step.
 
 $$
-\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_k}}\right)V
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d}}\right)V
 $$   
 
 Imagine we are at decoding step $t$, the current token was sampled from the previous step:
@@ -432,17 +432,20 @@ $$
 4. Compute the attention scores for the current token $a_t = \text{softmax}\left(\frac{q_t K_t^\top}{\sqrt{d}}\right) \in \mathbb{R}^t$.
 5. Compute the layer output $o_t = a_t V_t \in \mathbb{R}^d$.
       
-A framework like PyTorch is unable to compute the dot-products of step 4 and 5 on non-contiguous tensors. So vLLM splits these per block.    
+A framework like PyTorch is unable to compute the dot-products of step 4 and 5 on non-contiguous tensors efficiently. So vLLM splits these per block.    
 Imagine that a block $j$ can hold the key and value vectors of $B$ tokens. You may retrieve $K_j, V_j \in \mathbb{R}^{B \times d}$. Since a block is a contiguous chunk of memory, it is possible to compute the following block-wise dot-product:
 
 $$
 s_j=\text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \in \mathbb{R}^{1 \times B}
 $$
 
-The results are accumulated for each block of the sequence to get the denominator of the softmax $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \in \mathbb{R}^{1 \times B}$. Then we would compute the block-wise attention scores:
+The results are accumulated across each block of the sequence to get the denominator of the softmax $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top 1}{\sqrt{d}}\right) \in \mathbb{R}$.     
+I am using the notation from the paper here (section [4.1](https://arxiv.org/pdf/2309.06180)), but I find it a bit confusing. The denominator is the sum of all exponentials across all blocks. First the partial sums are computed block-wise, and then all summed together to get the sum for the entire sequence.    
+The all-ones vector in the exponential in the paper is misleading, it should actually be $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right)1 \in \mathbb{R}$.        
+We would then compute the block-wise attention scores:
 
 $$
-a_j = \frac{s_j}{S}
+a_j = \frac{s_j}{S} \in \mathbb{R}^{1 \times B}
 $$
 
 Finally, we can compute the dot-product between attention scores and value vectors block-wise, and sum over blocks to get the layer output $o_t$:
@@ -451,7 +454,7 @@ $$
 o_t = \sum_j a_j V_j \in \mathbb{R}^d
 $$
 
-That is what **PagedAttention** does. It enables to compute self attention while minimizing external and internal fragmentation. This is the key optimization of vLLM. In order to make PagedAttention more efficient, vLLM also developped specific CUDA kernels ([previous part](#requesting-the-server) and section 5.1 of the vLLM research paper).
+That is what **PagedAttention** does. It enables to compute self attention while minimizing external and internal fragmentation. This is the key optimization of vLLM. In order to make PagedAttention more efficient, vLLM also developed specific CUDA kernels ([previous part](#requesting-the-server) and section 5.1 of the vLLM research paper).
       
 ### Continuous batching
 
