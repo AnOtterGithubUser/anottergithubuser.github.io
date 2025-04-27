@@ -441,7 +441,7 @@ $$
 
 The results are accumulated across each block of the sequence to get the denominator of the softmax $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top 1}{\sqrt{d}}\right) \in \mathbb{R}$.     
 I am using the notation from the paper here (section [4.1](https://arxiv.org/pdf/2309.06180)), but I find it a bit confusing. The denominator is the sum of all exponentials across all blocks. First the partial sums are computed block-wise, and then all summed together to get the sum for the entire sequence.    
-The all-ones vector in the exponential in the paper is misleading, it should actually be $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right)1 \in \mathbb{R}$.        
+The all-ones vector in the exponential in the paper is misleading, it should actually be $S=\sum_{j} [ \text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right)1 ] \in \mathbb{R}$.        
 We would then compute the block-wise attention scores:
 
 $$
