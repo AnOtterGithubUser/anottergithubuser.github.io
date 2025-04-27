@@ -166,79 +166,79 @@ vLLM V1 released its alpha in January 2025 and introduces significant upgrades w
 {% highlight python %}
 47 class EngineCore:
 48     """Inner loop of vLLM's Engine."""
-100 
-100     def __init__(self,
-100                  vllm_config: VllmConfig,
-100                  executor_class: type[Executor],
-100                  log_stats: bool,
-100                  executor_fail_callback: Optional[Callable] = None):
-100         assert vllm_config.model_config.runner_type != "pooling"
-100 
-100         logger.info("Initializing a V1 LLM engine (v%s) with config: %s",
-100                     VLLM_VERSION, vllm_config)
-100 
-100         self.log_stats = log_stats
-100 
-100         # Setup Model.
-100         self.model_executor = executor_class(vllm_config)
-100         if executor_fail_callback is not None:
-100             self.model_executor.register_failure_callback(
-100                 executor_fail_callback)
-100 
-100         # Setup KV Caches and update CacheConfig after profiling.
-100         num_gpu_blocks, num_cpu_blocks, kv_cache_config = \
-100             self._initialize_kv_caches(vllm_config)
-100 
-100         vllm_config.cache_config.num_gpu_blocks = num_gpu_blocks
-100         vllm_config.cache_config.num_cpu_blocks = num_cpu_blocks
-100 
-100         self.structured_output_manager = StructuredOutputManager(vllm_config)
-100 
-100         # Setup scheduler.
-100         if isinstance(vllm_config.scheduler_config.scheduler_cls, str):
-100             Scheduler = resolve_obj_by_qualname(
-100                 vllm_config.scheduler_config.scheduler_cls)
-100         else:
-100             Scheduler = vllm_config.scheduler_config.scheduler_cls
-100 
-100         # This warning can be removed once the V1 Scheduler interface is
-100         # finalized and we can maintain support for scheduler classes that
-100         # implement it
-100         if Scheduler is not V1Scheduler:
-100             logger.warning(
-100                 "Using configured V1 scheduler class %s. "
-100                 "This scheduler interface is not public and "
-100                 "compatibility may not be maintained.",
-100                 vllm_config.scheduler_config.scheduler_cls)
-100 
-100         self.scheduler: SchedulerInterface = Scheduler(
-100             scheduler_config=vllm_config.scheduler_config,
-100             model_config=vllm_config.model_config,
-100             cache_config=vllm_config.cache_config,
-100             lora_config=vllm_config.lora_config,
-100             kv_cache_config=kv_cache_config,
+49 
+50     def __init__(self,
+51                  vllm_config: VllmConfig,
+52                  executor_class: type[Executor],
+53                  log_stats: bool,
+54                  executor_fail_callback: Optional[Callable] = None):
+55         assert vllm_config.model_config.runner_type != "pooling"
+56 
+57         logger.info("Initializing a V1 LLM engine (v%s) with config: %s",
+58                     VLLM_VERSION, vllm_config)
+59 
+60         self.log_stats = log_stats
+61 
+62         # Setup Model.
+63         self.model_executor = executor_class(vllm_config)
+64         if executor_fail_callback is not None:
+65             self.model_executor.register_failure_callback(
+66                 executor_fail_callback)
+67 
+68         # Setup KV Caches and update CacheConfig after profiling.
+69         num_gpu_blocks, num_cpu_blocks, kv_cache_config = \
+70             self._initialize_kv_caches(vllm_config)
+71 
+72         vllm_config.cache_config.num_gpu_blocks = num_gpu_blocks
+73         vllm_config.cache_config.num_cpu_blocks = num_cpu_blocks
+74 
+75         self.structured_output_manager = StructuredOutputManager(vllm_config)
+76 
+77         # Setup scheduler.
+78         if isinstance(vllm_config.scheduler_config.scheduler_cls, str):
+79             Scheduler = resolve_obj_by_qualname(
+80                 vllm_config.scheduler_config.scheduler_cls)
+81         else:
+82             Scheduler = vllm_config.scheduler_config.scheduler_cls
+83 
+84         # This warning can be removed once the V1 Scheduler interface is
+85         # finalized and we can maintain support for scheduler classes that
+86         # implement it
+87         if Scheduler is not V1Scheduler:
+88             logger.warning(
+89                 "Using configured V1 scheduler class %s. "
+90                 "This scheduler interface is not public and "
+91                 "compatibility may not be maintained.",
+92                 vllm_config.scheduler_config.scheduler_cls)
+93 
+94         self.scheduler: SchedulerInterface = Scheduler(
+95             scheduler_config=vllm_config.scheduler_config,
+96             model_config=vllm_config.model_config,
+97             cache_config=vllm_config.cache_config,
+98             lora_config=vllm_config.lora_config,
+99             kv_cache_config=kv_cache_config,
 100             speculative_config=vllm_config.speculative_config,
-100             structured_output_manager=self.structured_output_manager,
-100             include_finished_set=vllm_config.parallel_config.data_parallel_size
-100             > 1,
-100             log_stats=self.log_stats,
-100         )
-100 
-100         # Setup MM Input Mapper.
-100         self.mm_input_cache_server = MirroredProcessingCache(
-100             vllm_config.model_config)
-100 
-100         # Setup batch queue for pipeline parallelism.
-100         # Batch queue for scheduled batches. This enables us to asynchronously
-100         # schedule and execute batches, and is required by pipeline parallelism
-100         # to eliminate pipeline bubbles.
-100         self.batch_queue_size = self.model_executor.max_concurrent_batches
-100         self.batch_queue: Optional[queue.Queue[tuple[Future[ModelRunnerOutput],
-100                                                      SchedulerOutput]]] = None
-100         if self.batch_queue_size > 1:
-100             logger.info("Batch queue is enabled with size %d",
-100                         self.batch_queue_size)
-100             self.batch_queue = queue.Queue(self.batch_queue_size)
+101             structured_output_manager=self.structured_output_manager,
+102             include_finished_set=vllm_config.parallel_config.data_parallel_size
+103             > 1,
+104             log_stats=self.log_stats,
+105         )
+106 
+107         # Setup MM Input Mapper.
+108         self.mm_input_cache_server = MirroredProcessingCache(
+109             vllm_config.model_config)
+110 
+111         # Setup batch queue for pipeline parallelism.
+112         # Batch queue for scheduled batches. This enables us to asynchronously
+113         # schedule and execute batches, and is required by pipeline parallelism
+114         # to eliminate pipeline bubbles.
+115         self.batch_queue_size = self.model_executor.max_concurrent_batches
+116         self.batch_queue: Optional[queue.Queue[tuple[Future[ModelRunnerOutput],
+117                                                      SchedulerOutput]]] = None
+118         if self.batch_queue_size > 1:
+119             logger.info("Batch queue is enabled with size %d",
+120                         self.batch_queue_size)
+121             self.batch_queue = queue.Queue(self.batch_queue_size)
 {% endhighlight %}   
 </figure> 
     
@@ -439,9 +439,9 @@ $$
 s_j=\text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \in \mathbb{R}^{1 \times B}
 $$
 
-The results are accumulated across each block of the sequence to get the denominator of the softmax $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top 1}{\sqrt{d}}\right) \in \mathbb{R}$.     
+The results are accumulated across each block of the sequence to get the denominator of the softmax $S=\sum_{j} \text{exp}\left(\frac{q_t K_j^\top \mathbf{1}}{\sqrt{d}}\right) \in \mathbb{R}$.     
 I am using the notation from the paper here (section [4.1](https://arxiv.org/pdf/2309.06180)), but I find it a bit confusing. The denominator is the sum of all exponentials across all blocks. First the partial sums are computed block-wise, and then all summed together to get the sum for the entire sequence.    
-The all-ones vector in the exponential in the paper is misleading, it should actually be $S=\sum_{j} [ \text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right)1 ] \in \mathbb{R}$.        
+The all-ones vector $\mathbf{1} \in \mathbb{R}^B$ in the exponential in the paper is misleading, it should actually be $S=\sum_{j} [ \text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right) \mathbf{1}] \in \mathbb{R}$. This is equivalent to the double sum $S=\sum_{j} \sum_{i}^B [\text{exp}\left(\frac{q_t K_j^\top}{\sqrt{d}}\right)]_i \in \mathbb{R}$.             
 We would then compute the block-wise attention scores:
 
 $$
