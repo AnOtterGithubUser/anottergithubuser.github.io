@@ -511,6 +511,15 @@
   .active a {
     color: #fff
   }
+
+   // Responsive behavior
+   @include breakpoint($medium) {
+    position: static;
+    width: auto;
+    top: auto;
+    left: auto;
+    margin-bottom: 2rem;
+  }
 }
 
 .toc__menu {
