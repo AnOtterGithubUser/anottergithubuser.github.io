@@ -507,13 +507,27 @@
   background-color: $background-color;
   position: fixed;
 
-  // Scrollspy marks toc items as .active when they are in focus
   .active a {
-    color: #fff
+    color: #fff;
   }
 
-   // Responsive behavior
-   @include breakpoint($medium) {
+  @include breakpoint($medium) {
+    position: static;
+    width: auto;
+    top: auto;
+    left: auto;
+    margin-bottom: 2rem;
+  }
+
+  @include breakpoint($small) {
+    position: static;
+    width: auto;
+    top: auto;
+    left: auto;
+    margin-bottom: 2rem;
+  }
+
+  @include breakpoint($x-small) {
     position: static;
     width: auto;
     top: auto;
@@ -521,6 +535,7 @@
     margin-bottom: 2rem;
   }
 }
+    
 
 .toc__menu {
   margin: 0;
