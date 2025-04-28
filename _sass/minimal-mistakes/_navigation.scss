@@ -505,7 +505,20 @@
 
 .toc {
   background-color: $background-color;
-  position: fixed;
+
+  /* Make the TOC fixed ONLY on screens ≥ $large (1024 px) */
+  @include breakpoint($large) {
+    position: fixed;
+    /* optional scrolling window */
+    max-height: calc(100vh - 4em);
+    overflow-y: auto;
+  }
+
+  /* On everything smaller than $large let it flow normally */
+  @include breakpoint(max-width $large - 1px) {
+    position: static;
+    width: 100%;
+  }
 
   // Scrollspy marks toc items as .active when they are in focus
   .active a {

@@ -445,3 +445,28 @@
     }
   }
 }
+
+@include breakpoint(max-width $large) {
+
+  /* 1 – restore normal page flow                                */
+  .page__layout {
+    display: flex;
+    flex-direction: column;   // lets us reorder children
+  }
+
+  /* 2 – re-style the right-hand sidebar so it behaves like a
+        header block instead of a floating panel                  */
+  .page__layout > .sidebar__right,
+  .page__layout > .sidebar__right.sticky {
+    position: static;         // cancel absolute / sticky tricks
+    float: none;              // no overlap
+    width: 100%;              // full-width like the article
+    margin: 0 0 1.25rem;      // breathing room under the bar
+    padding-left: 0;
+    order: -1;                // renders before the article
+  }
+
+  /* Optional: keep it “glued” to the top while scrolling
+     Replace the `position: static` line above with:             
+     position: sticky; top: 0;                                   */
+}
