@@ -1,157 +1,64 @@
 ---
-title: "Structured outputs from large language models"
+title: "Improve small models reliability with structured generation"
 date: 2026-04-02 15:13 +100
-excerpt: How to make an LLM generate structured output reliably
+excerpt: Using structured generation to make LLM reliable
 category: peek generativeai coding llm
 ---
 
-Large language models do not always return the same answer to a given question. This is a key feature called non-determinism, which makes conversations feel more natural. However, it prevents these models from being integrated with other systems that expect clear formats.
+A few years ago, when GPT-4 had just been released, I had the opportunity to work on a project involving small open source LLMs. Good models were scarce and I did not have the infrastructure to run the largest ones (Llama 65B back then). The problem was to take a query in natural language as input, and call an API to fetch the required data. This usually involves turning text into a structured format like JSON.     
 
-## The problem with non-determinism
+# Structured generation with LLMs
 
-A large language model will provide a slightly different answer to the same question. This is a feature, not a bug. These models generate their answers by sampling from a distribution of tokens (*nd: tokens are groups of characters that make up the model's vocabulary*). Relevant tokens get a higher probability. However, there is no guarantee that they will be picked.
+You probably have heard about structured generation for some times, if not, you sure have benefited from it without knowing.     
+Language models can follow instructions to perform various tasks, which makes them exceptionnaly useful and versatile. However, you may have noticed they always answer the same question in a slighlty different way. This makes interactions feel more natural, but it is an issue when interacting with external systems which expect specific formats. Back in early 2023, we had to use a large prompt, few-shot learning, and clever parsing to make sure the output was a valid JSON.    
+That is what **Structured Generation** is for: make sure a model always answers using the same structure. AI agents rely on it extensively today to call external APIs and interact with the outside world.     
+OpenAI introduced their [Structured Output API](https://openai.com/index/introducing-structured-outputs-in-the-api/) in summer 2024. It is based on a technic called **constrained-decoding**. Basically, language models work by sampling tokens from their vocabulary, which we call the *support*. The more relevant a token is, the more likely it is to be sampled. Constrained decoding works by restricting the support to a subset of tokens compliant with the provided format. Outlines, an open source constrained decoding library, explains it in details in their blog post [Coalescence: making LLM inference 5x faster](https://blog.dottxt.ai/coalescence.html).      
 
-<p align="center">
-  <img src="/assets/images/token_sampling.png" alt="Alt text" style="max-width: 100%;">
-  <em style="font-size: 0.8em;">Illustration of token sampling</em>
-</p>
+# Where constrained decoding happens
 
-Other systems may benefit from large language models' capabilities. However, they expect interfaces with specific formats, making integration unreliable...
+To restrict the support, i.e the tokens the model can sample from, constrained decoding applies a mask. This mask sets the probability of non-valid tokens to zero.     
+For example, in order to generate a valid JSON, the first token must be `{` (or start with `{ `), so the probability of all the other tokens is set to zero, hence the decoder has no choice but pick `{`.   
+This means that constrained decoding need to access the *probabilities* of each token. So it must live in the same process as the decoder. That means that constrained decoding usually lives in the **server** with the model. Actually it always does in production.    
+Open source inference engines like vLLM or TGI enable constrained decoding using the same API as OpenAI. To do so, they leverage tools like xgrammar, LLGuidance ([vLLM](https://docs.vllm.ai/en/latest/features/structured_outputs/)), or outlines ([TGI](https://docs.vllm.ai/en/latest/features/structured_outputs/)). However these engines are designed to work with GPUs, and I don't have one...    
+Luckily, local engines like llama.cpp, Ollama, or LM Studio, also implement this feature.      
+Now, although it's interesting to know how this works, you will likely **never** use a library like outlines in your application. You will only use it (or an equivalent) indirectly through the structured output API and the `response_format` argument.    
+So **why** am I telling you this? Because it personnally took me some time to understand it. Also because outlines does not tell you straight away, it actually falls back to the structured output API when you call a server.      
+
+# Small language model for document understanding
+
+Document understanding involves extracting text from a picture, and then structuring it. It is usually applied on forms where values must be matched to their respective keys. Usually, it requires chaining two models, one to extract the text (like Tesseract), and then another to perform matching (a LLM, or just a regex sometimes). Visual Language Models enable to do it in one pass.    
+
+I ran an experiment using a VLM locally in LM Studio. I used Qwen3-VL-2B-Instruct, which offers a good trade-off between speed, performance, and memory.    
+The model must generate a JSON from the image of an invoice.    
+<ADD PYDANTUC MODEL FOR INVOICE>     
      
-Back in early 2023, I was trying to call an API to answer queries in natural language. APIs typically expect formatted inputs like JSON. Thus, I was using a large language model to parse the queries.     
-I was focusing on open source models, which were lagging behind GPT-3.5 at the time, let alone GPT-4, which had just been released.     
-Basically, we had to answer two questions:
-- Can a large language model reliably parse natural language into JSON? *nd: is it using valid keys and values*
-- Is the resulting JSON accurate? *nd: are the field values correct given the query*
-     
-The only way we knew how to make a LLM output JSON was to provide instructions (with a great deal of uppercase and *IMPORTANT* blocks) including the JSON format and domain rules. We had to implement a few guardrails and parsing rules, but we got valid JSON most of the time. Was it reliable? Enough for the PoC. Just stray a little from the happy path and the model would come up with new keys or values, or simply fail to produce valid JSON. GPT-3.5, which was our baseline, would also fall short in complex cases.
+## Experiment baseline: Prompting
 
-## Structured generation
+As a baseline, I started with simply prompting the model, including the JSON schema in the prompt. Out of 3 invoices, the model never generates a valid JSON. It include markdown format, escape characters, ... Although it understood the task and can mostly read the data, it fails at following the instructions precisely regarding the format. Up to mid-2024, we would have implemented guardrails, parsed the output, added instructions, but we would never have had any guarantee. Fortunately it is now 2026.     
 
-I kept thinking about this until I stumbled upon *structured generation* with [outlines](https://github.com/dottxt-ai/outlines).    
-It does exactly what I was looking for: it guarantees that a model's output will match a structure. 
-      
-Conceptually, there are two main approaches to structured generation. The first is based on validation and retries. The output is evaluated using a framework like Pydantic, and if it does not match, the model is asked to try again. This does not provide strong guarantees, but it is often good enough in practice when using strong models. The second is *constrained generation*, which forces the model to output only specific tokens that match the structure. This is Outlines' approach. It is explained in detail in their blog [Coalescence: making LLM inference 5x faster](https://blog.dottxt.ai/coalescence.html).    
-      
-Today, structured generation is everywhere, as it is a key feature of AI agents that need to interact with external systems. OpenAI has released it in its API, and it is possible to provide JSON to the `/v1/chat/completions` endpoint. Other tools that expose this endpoint, like vLLM, Ollama, and LM Studio, also implement it. However, LM Studio notes that LLMs below 7B parameters may not support it.
-      
+## Improvement: Constrained decoding
 
-## Experiments
+We now add the JSON schema we expect in the `response_format` argument. Since the model uses MLX as inference engine, LM Studio uses outlines to implement constrained decoding. We now get a 100% valid outputs from the model.     
+Is that it? Is OCR solved?    
+No, check the values, these are not right.    
+<ADD IMAGE AND OUTPUTS>  
 
-My point is to compare how structured generation improves a model's abilities for my JSON generation use case. I focused on rather small models that can be hosted on a single GPU or even locally, however, I included a proprietary model (`gpt-4o-mini`) as a baseline.       
-I used Outlines and Instructor to implement structured generation.    
-I ran the models locally using LM Studio's server. Everything runs on a MacBook Air M5 with 10 CPU cores.
+# Structural vs Semantic validity
 
-I compared four models:
-- `gpt-4o-mini` using OpenAI API (because it's cheap)
-- `gemma-4-e2b-it` (4bit quantization)
-- `qwen3-4b-instruct-2507-mlx` (4bit quantization)
-- `qwen3-0.6b` (4bit quantization)
+Structured generation guarantees that the output will follow a given structure. This means that it will use only existing keys, will not forget any, and that every value will have the right type. However, it does not guarantee that the values will be correct. For example, our model read `65.9` instead of `65.99`. The type is correct, the structure is valid, constrained decoding cannot detect that. It only guarantees **structure**, it does not guarantee relevance nor coherence, which we call **semantic**.          
+And this was expected, solving this problem cannot be as simple as calling an API. OpenAI also pointed this out in the limitations in their article I mentioned above.     
+To ensure semantic validity, we must implement **domain rules**. Because your domain depends on your application, this part must live in your application layer on the client side.     
+So on top of constrained decoding, we apply domain knowledge and a retry mechanism. Fortunately, we don't have to do this ourselves.    
 
-I compared raw model generation to structured generation with grammar constraints, using Outlines, and validation with retries, using [Instructor](https://github.com/567-labs/instructor).      
-The use case consists of taking a candidate's description in natural language and generating JSON following this pattern:
-```python
-class ContactType(str, Enum):
-    email = "email"
-    phone = "phone"
-    linkedin = "linkedin"
-    github = "github"
-    website = "website"
+## Enforcing semantic validity with instructor
 
+[Instructor](https://python.useinstructor.com/concepts/) provides a unified interface to create clients for any provider. It leverages the structured output API of the providers and implements a validation and retry mechanism on top of it. Since LM Studio supports the OpenAI API, we can use the OpenAI client with a custom api URL pointing to localhost.     
+We first define model validators in each Pydantic model. These work based on the assumption that each field will have the right format. In our case, we check that the dates make sense, and the operations between the different quantities work.    
+<ADD PYDANTIC CODE>     
+On each generation, Instructor will automatically run these checks. It will include the validation errors, if any, in a new prompt, and send it back to the model to auto-correct itself. This comes at the cost of increased latency.      
+We now catch mistakes, like VAT not being correctly computed, or amounts not adding up. However, the model cannot always successfully fix the output. Although we can catch issues and attempt to fix them, thus decreasing the number of errors, there is no way to guarantee correctness. Even when the model fixes its answer to make it semantically valid, there is a risk that it made up a number instead of checking the picture again. Usually, instructor will retry at least once before making up an answer, so invoices that did not work on first try should go to a separate stream for human validation. This is the most reasonable approach to date.     
 
-class Contact(BaseModel):
-    type: ContactType
-    value: str
-
-
-class Occupation(str, Enum):
-    software_engineer = "software_engineer"
-    data_scientist = "data_scientist"
-    data_engineer = "data_engineer"
-    ml_engineer = "ml_engineer"
-    devops_engineer = "devops_engineer"
-    designer = "designer"
-    product_manager = "product_manager"
-    engineering_manager = "engineering_manager"
-    researcher = "researcher"
-    other = "other"
-
-
-class Person(BaseModel):
-    first_name: Optional[str] = Field(description="First/given name")
-    last_name: Optional[str] = Field(description="Last/family name if mentioned")
-    age: Optional[int] = Field(description="Age in years if mentioned")
-    occupation: Optional[Occupation] = Field(description="Closest matching occupation category")
-    contacts: list[Contact] = Field(description="Contact details found in the text")
-```
-I used Opus 4.6 to generate descriptions and their matching JSON ground truth.     
-You may find the code in this [github repository]().    
-    
-#### Simple case
-
-To get started and iterate quickly, I only used three descriptions at first ([`data/sample.csv`]() in the repo).      
-I computed three main metrics:
-- **Parsing rate**: how often the model outputs a valid JSON?
-- **Accuracy**: how often the model outputs the correct fields? (based on the ground truth).   
-*nd: one could be interested in a per-key metric, but that was not the point here*
-- **Average latency**: how long the model takes to output the JSON?
-       
-| Label | Valid | Invalid | Total | Parse rate | Matches | Mismatches | Total with ground truth | Accuracy | Avg duration (s) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| openai / gpt-4o-mini / raw | 3 | 0 | 3 | 1.0 | 3 | 0 | 3 | 1.0 | 2.916 |
-| openai / gpt-4o-mini / outlines | 3 | 0 | 3 | 1.0 | 2 | 1 | 3 | 0.666 | 3.022 |
-| openai / gpt-4o-mini / instructor | 3 | 0 | 3 | 1.0 | 3 | 0 | 3 | 1.0 | 1.901 |
-| local / gemma-4-e2b-it / raw | 3 | 0 | 3 | 1.0 | 2 | 1 | 3 | 0.666 | 1.709 |
-| local / gemma-4-e2b-it / outlines | 3 | 0 | 3 | 1.0 | 2 | 1 | 3 | 0.666 | 1.871 |
-| local / gemma-4-e2b-it / instructor | 3 | 0 | 3 | 1.0 | 2 | 1 | 3 | 0.666 | 1.794 |
-| local / qwen3-4b-instruct-2507-mlx / raw | 3 | 0 | 3 | 1.0 | 3 | 0 | 3 | 1.0 | 2.090 |
-| local / qwen3-4b-instruct-2507-mlx / outlines | 3 | 0 | 3 | 1.0 | 3 | 0 | 3 | 1.0 | 1.836 |
-| local / qwen3-4b-instruct-2507-mlx / instructor | 3 | 0 | 3 | 1.0 | 3 | 0 | 3 | 1.0 | 1.856 |
-| local / qwen3-0.6b / raw / thinking:on | 1 | 2 | 3 | 0.333 | 1 | 0 | 1 | 1.0 | 7.691 |
-| local / qwen3-0.6b / raw / thinking:off | 0 | 3 | 3 | 0.0 | 0 | 0 | 0 | 0.0 | 1.064 |
-| local / qwen3-0.6b / outlines | 3 | 0 | 3 | 1.0 | 0 | 3 | 3 | 0.0 | 0.804 |
-| local / qwen3-0.6b / instructor | 3 | 0 | 3 | 1.0 | 0 | 3 | 3 | 0.0 | 0.907 |
-
-This sample is very simple, so the best models get it right without structured generation. Only Qwen3-0.6B struggles. This is especially interesting, as it is by far the smallest model and the one that benefits most from structured generation.    
-Qwen3-0.6B has thinking enabled by default, so I also compared its performance without thinking to get a better idea of latency. Indeed, structured generation prevents thinking tokens from being emitted, as they are not part of the grammar, thereby cancelling this model's reasoning capabilities. This is why latency is much lower with structured generation. It should be compared with the `thinking:off` latency.      
-Structured generation seems to make Qwen family models faster, however, this is inconclusive from this experiment. It greatly improves the parsing ability of the smallest model, going from **0%** with `thinking:off` to a perfect **100%**. Structured generation does not seem to have an impact on accuracy, but given the small sample size, that is still inconclusive at this stage.
-
-#### Tricky case
-
-Three descriptions were not enough to push the models to their limits, and I needed something more complicated, so I generated 35 new descriptions using Opus 4.6 and asked for tricky cases with misleading information.      
-     
-| Label | Valid | Invalid | Total | Parse rate | Matches | Mismatches | Total with ground truth | Accuracy | Avg duration (s) |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| openai / gpt-4o-mini / raw | 35 | 0 | 35 | 1.0 | 6 | 29 | 35 | 0.171 | 2.688 |
-| openai / gpt-4o-mini / outlines | 35 | 0 | 35 | 1.0 | 5 | 30 | 35 | 0.143 | 2.803 |
-| openai / gpt-4o-mini / instructor | 35 | 0 | 35 | 1.0 | 8 | 27 | 35 | 0.229 | 1.821 |
-| local / gemma-4-e2b-it / raw | 34 | 1 | 35 | 0.971 | 21 | 13 | 34 | 0.618 | 2.261 |
-| local / gemma-4-e2b-it / outlines | 35 | 0 | 35 | 1.0 | 21 | 14 | 35 | 0.6 | 3.022 |
-| local / gemma-4-e2b-it / instructor | 35 | 0 | 35 | 1.0 | 21 | 14 | 35 | 0.6 | 3.006 |
-| local / qwen3-4b-instruct-2507-mlx / raw | 33 | 2 | 35 | 0.943 | 21 | 12 | 33 | 0.636 | 3.663 |
-| local / qwen3-4b-instruct-2507-mlx / outlines | 35 | 0 | 35 | 1.0 | 22 | 13 | 35 | 0.629 | 2.923 |
-| local / qwen3-4b-instruct-2507-mlx / instructor | 35 | 0 | 35 | 1.0 | 21 | 14 | 35 | 0.6 | 3.121 |
-| local / qwen3-0.6b / raw / thinking:on | 14 | 21 | 35 | 0.4 | 3 | 11 | 14 | 0.214 | 9.554 |
-| local / qwen3-0.6b / raw / thinking:off | 0 | 35 | 35 | 0.0 | 0 | 0 | 0 | 0.0 | 1.476 |
-| local / qwen3-0.6b / outlines | 35 | 0 | 35 | 1.0 | 9 | 26 | 35 | 0.257 | 0.804 |
-| local / qwen3-0.6b / instructor | 35 | 0 | 35 | 1.0 | 5 | 30 | 35 | 0.143 | 0.827 |
-
-
-These results demonstrate the impact of structured generation more clearly. Although `gpt-4o-mini` can still parse without any help beyond prompting, other models start to show their limits. Although larger open source models perform well without structured generation (97% for gemma-4 and 94% for Qwen3-4B), they would still pose issues at scale.      
-Structured generation makes all outputs valid JSON. As Outlines enforces strict grammar, this is not surprising. On the other hand, Instructor *only* does prompting, validation, and retries, yet it enables even the smallest model to reach a perfect parsing rate on this dataset. From this, I conclude that although Instructor's approach does not provide theoretical guarantees, it is robust in practice.   
-Does that mean that structured generation makes all these models usable in production? Not yet. The accuracy remains pretty low and neither framework seems to improve it. This is not surprising, as Outlines enforces grammar but does not improve reasoning abilities or semantic understanding. The same is true for Instructor, which validates format but does not affect reasoning.   
-Does structured generation make inference faster? In the case of Outlines, coalescence should indeed speed up decoding. Again, from this experiment, that seems to depend on the model. Qwen models' latency is indeed reduced on average, significantly for Qwen3-0.6B (~45% faster). However, it does not seem to make a difference for `gemma-4` and `gpt-4o-mini`.
-
-## Limitations
-
-My main goal was to check whether structured generation guaranteed a reliable output structure. In that respect, it was a success.       
-What structured generation does not do is make models smarter. Small models may produce a valid output given the structure, but still pick the wrong value. This depends on the model's reasoning abilities. `outlines` only enforces the grammar, and `instructor` only improves prompting and adds a retry loop.           
-Improving the semantic understanding of a model for this use case would require fine-tuning in addition to structured generation.    
-Another important practical point is package size. I tried to use `outlines` in a Lambda function and, unfortunately, it made the function artifact too large. On my machine, `outlines` requires 12 MB of disk space, and `instructor` requires 7.6 MB. This may prevent these tools from being used on devices where memory is tight.     
-
-    
 ## Conclusion
 
-Proprietary models are really good at producing valid outputs based on instructions alone. For more complex cases, providers have structured output APIs to enforce compliance with a schema. Hence, for these models, I would say that using a library for structured generation is not necessary.        
-Regarding `outlines`, my conclusion is that it should be used when one needs theoretical guarantees that the output will conform to a format. Otherwise, for open source models, `instructor` is a good fit.   
-Small open source models benefit the most from structured generation. Although it makes these models output valid formats, it does not improve the models' cognitive abilities. These tools can be used to structure data in relatively simple cases, where constraints like privacy and cost are priorities. However, they would require fine-tuning for more complex cases in order to extract accurate data.      
+Structured generation provides strong theoretical guarantees, but it is not a substitute for the model's intelligence. The model's ability to reason and correctly understand the input is still key. Although the structural validity is now a solved problem, semantic validity remains an issue. We have seen how to implement guardrails and add retries, but for small models it can be enforced, not guaranteed. Even when checks pass and the output is semantically valid, we should always add a human in the loop for these use cases. These tools mostly help us sorting the cases that can be inserted automatically and the ones that need human validation.
+
