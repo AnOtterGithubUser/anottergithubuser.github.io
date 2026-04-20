@@ -14,7 +14,7 @@ Today, I wanted to explore how it can help small models.
 You probably have heard about structured generation for some times, if not, you sure have benefited from it without knowing.     
 Language models can follow instructions to perform various tasks, which makes them exceptionnaly useful and versatile. However, you may have noticed they always answer the same question in a slighlty different way. This makes interactions feel more natural, but it is an issue when interacting with external systems which expect specific formats. Back in early 2023, we had to use a large prompt, few-shot learning, and clever parsing to make sure the output was a valid JSON, but with no guarantee.    
 That is what **Structured Generation** is for: make sure a model always answers using the same structure. AI agents rely on it extensively today to call external APIs and interact with the outside world via *function calling*.     
-There were projects in the open source community starting mid 2023, and OpenAI introduced their [Structured Output API](https://openai.com/index/introducing-structured-outputs-in-the-api/) in August 2024. These are all based on technic called **constrained decoding**. 
+There were projects in the open source community starting mid 2023, and OpenAI introduced their [Structured Output API](https://openai.com/index/introducing-structured-outputs-in-the-api/) in August 2024. These are all based on technique called **constrained decoding**. 
 
 # What is Constrained decoding?
 
@@ -26,10 +26,10 @@ To restrict the support, i.e the tokens the model can sample from, constrained d
   <em style="font-size: 0.8em;">Figure 1. Masking to decode the first token</em>
 </p>
 
-This means that constrained decoding needs to access the *probabilities* of each token at each decoding step. So it must live in the same process as the decoder. Hence why constrained decoding lives in the **server** with the model.         
-Open source inference engines like vLLM or TGI enable constrained decoding using the same API as OpenAI. To do so, they leverage tools like xgrammar, LLGuidance ([vLLM](https://docs.vllm.ai/en/latest/features/structured_outputs/)), or outlines ([TGI](https://docs.vllm.ai/en/latest/features/structured_outputs/)).     
+This means that constrained decoding needs to access the *probabilities* of each token at each decoding step. So it must live where the decoder is. Hence why constrained decoding usually happens in the **inference server**.         
+Open source inference engines like vLLM or TGI enable constrained decoding using the same API as OpenAI. To do so, they leverage tools like xgrammar, LLGuidance ([vLLM](https://docs.vllm.ai/en/latest/features/structured_outputs/)), or outlines ([TGI](https://huggingface.co/docs/text-generation-inference/conceptual/guidance)).     
 However these engines are designed to work with GPUs, what if I want to run models locally? Luckily, local engines like llama.cpp, Ollama, or LM Studio, also implement this feature using the same tools.          
-Although it's interesting to know how this works, you will likely **never** use a library like outlines (or its equivalent) in your application. You will interact with it through an API, and your inference server will call.    
+Although it's interesting to know how this works, you will likely **not** use a library like outlines (or its equivalent) in your application code, but interact with it through an API, and your inference server will call it.    
 So **why** am I telling you this? Because it personnally took me some time to understand where constrained decoding happens. Actually nothing prevents you from using outlines on the client side but this will just delegate constrained decoding to OpenAI via their structured output API by adding a `response_format` argument. It will also add a few MB of dependencies to your application for nothing (no, that never happened to me...).
 
 # Using small language models
@@ -40,7 +40,7 @@ Small language models (under ~7B) have limited reasoning capabilities yet they i
 Document understanding involves extracting text from a picture, and then structuring it. It is usually applied on forms where values must be matched to their respective keys. Usually, it requires chaining two models, one to extract the text (like Tesseract), and then another to perform matching (a LLM, or just a regex sometimes). Visual Language Models enable to do it in one pass.    
 
 To put structured generation to the test, I ran an experiment using a VLM locally served with LM Studio. I used `Qwen3-VL-2B-Instruct` quantized in 8 bits, which offers a good trade-off between speed, performance, and memory. The model is compiled using MLX, which uses outlines as engine for structured outputs in LM Studio.        
-The model must generate a JSON from the image of an invoice. Code is available at <ADD REPO LINK>.
+The model must generate a JSON from the image of an invoice. Code is available at https://github.com/AnOtterGithubUser/structured_generation_with_small_models.
      
 ### Baseline: Prompting
 
@@ -477,7 +477,7 @@ class Summary(BaseModel):
 
 </details>
 
-These domain rules do not make the model *see better* really, but it pushes it to make sense of the image and guess when it does not know to comply with the schema. Parsing still works perfectly because we keep the strong theoretical guarantees of structured generation, but now we also improved the semantic of the output, and somehow the model found the fourth item it had missed.
+These domain rules do not make the model *see better* really, but it pushes it to make sense of the image and guess when it does not know to comply with the schema. Parsing still works perfectly because we keep the strong theoretical guarantees of structured generation, but now we also improved the semantic of the output. Interestingly, it also led the model to include the missing item, although this is more an indirect side effect rather than a true change in perception. The model sees the same thing, we just constrain it to interpret it differently.
 
 <details markdown="1">
 <summary>Raw output for invoice 1</summary>
@@ -574,7 +574,7 @@ Sometimes there are additional information about the unit on the address line, u
 
 </details>
 
-### Improvement 3: Chain of thought
+### Improvement 3: Make the model think
 
 The best language models today have reasoning ability. This means they can think before they provide their final answer, and their thinking usually lies between `<thinking></thinking>` which are special tokens.     
 For models with native thinking, constrained decoding prevents these tokens to be picked as they are not part of the grammar. However we can trick the model into thinking about its generation, even without thinking ability, by adding a special field to our schemas with little constraints, that the model will use as a scratchpad.    
@@ -607,7 +607,7 @@ class Invoice(BaseModel):
 
 </details>
 
-The model was already able to see all the data, it just did not put these in the right place. Using the scratchpad and thinking field helps it to provide a more grounded answer.     
+The model was already able to see all the data, it just did not put these in the right place. Using the scratchpad and thinking field helps it to provide a more grounded answer in our case.     
 
 <details markdown="1">
 <summary>Thinking helps the model fix the address for invoice 2</summary>
@@ -618,7 +618,7 @@ The model was already able to see all the data, it just did not put these in the
 
 </details>
 
-Thinking fields can be put in every Pydantic object but at the cost of extra output tokens and latency. In this case, I tried to put it only where it was needed and found out from experience that it was required both in `Invoice` and `Address`. This is empirical and should not be taken as a generality. If accuracy is the priority, I would recommend using such field in every nested model.
+Thinking fields can be put in every Pydantic object but at the cost of extra output tokens and latency. In this case, I tried to put it only where it was needed and found out from experience that it was required both in `Invoice` and `Address`. This is empirical and should not be taken as a generality.
 
 ### Improvement 4: Validate after generation
 
@@ -641,4 +641,4 @@ We can set an arbitrary number of retries. In the end, if the validation still f
 ## Conclusion
 
 In this post we have seen how to use structured generation to improve the reliability of small models. For these, prompting alone is rarely sufficient to achieve the task. Constrained decoding is a building block that gives strong theoretical guarantees on the output structure. However, it is only the first step in improving the resilience. Domain knowledge is still key and shall be integrated into the schema as much as possible before generation. It should also be used to run checks after generation. In the end, we are able to process 2 invoices out of 3 with confidence, and get helpful hints on issues for the third one.             
-All these tools enforce semantic validity in addition to structure. However, no tool may provide guarantees on correctness. For critical scenario, even samples that could be processed automatically shall still be reviewed by a human.
+All these tools enforce semantic validity in addition to structure. However, no tool may provide guarantees on correctness. For critical scenario, even samples that could be processed automatically should still be reviewed by a human.
