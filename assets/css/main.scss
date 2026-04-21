@@ -7,3 +7,15 @@ search: false
 
 @import "minimal-mistakes/skins/{{ site.minimal_mistakes_skin | default: 'default' }}"; // skin
 @import "minimal-mistakes"; // main partials
+
+.page__content details {
+  margin-bottom: 1em;
+}
+
+.page__content summary {
+  display: list-item;
+  width: fit-content;
+  padding: 0.25em 0.5em;
+  border: 1px solid $border-color;
+  font-weight: 600;
+}
