@@ -1,8 +1,9 @@
 ---
-title: "Structure generation with small local models"
+title: "Structured outputs with small local models"
 date: 2026-04-02 15:13 +100
 excerpt: Using structured generation to make small VLM reliable at OCR
 category: peek generativeai coding llm
+toc: true
 ---
 
 A few years ago, when GPT-4 had just been released, I had the opportunity to work on a project involving small open source LLMs. Good models were scarce and I did not have the infrastructure to run the largest ones.    
@@ -47,7 +48,7 @@ The model must generate a JSON from the image of an invoice. Code is available a
 I defined the expected Invoice schema as a Pydantic model
 
 <details markdown="1">
-<summary>Pydantic models</summary>
+<summary>Check Pydantic models</summary>
 
 ```python
 class Invoice(BaseModel):
@@ -98,10 +99,12 @@ class Summary(BaseModel):
 
 </details>
 
+
 Figure 2 shows an example of invoice input:
 
-<p align="center">
-  <img src="/assets/images/invoice_1.jpg" alt="Alt text" style="max-width: 100%;">
+<p style="text-align: center;">
+  <img src="/assets/images/invoice_1.jpg" alt="Alt text" style="width: 100%; max-width: 600px; height: auto;">
+  <br>
   <em style="font-size: 0.8em;">Figure 2. Sample of invoice image</em>
 </p>
 
@@ -109,7 +112,7 @@ As a baseline, I started with simply prompting the model, including the JSON sch
 Out of 3 invoices, the model never generates a valid JSON for Pydantic. Taking a closer look, the outputs only include the given schema with no actual values from the image.
 
 <details markdown="1">
-<summary>Raw output for invoice 1</summary>
+<summary>Check raw output for invoice 1</summary>
 
 ```bash
 {
@@ -335,7 +338,7 @@ The schema is willingly nested to make the task harder. Before constrained decod
 Now let's use constrained decoding by adding the JSON schema in the `response_format` argument. This time all 3 invoices are parsed correctly with Pydantic and include actual values from the image.
 
 <details markdown="1">
-<summary>Raw output for invoice 1</summary>
+<summary>Check step 1 output for invoice 1</summary>
 
 ```json
 {
@@ -423,7 +426,7 @@ We now add field descriptions in all Pydantic models to help the VLM and prevent
 - Values should have 2 digits after the comma   
 
 <details markdown="1">
-<summary>Improved pydantic models</summary>
+<summary>Check improved pydantic models</summary>
 
 ```python
 class Invoice(BaseModel):
@@ -480,7 +483,7 @@ class Summary(BaseModel):
 These domain rules do not make the model *see better* really, but it pushes it to make sense of the image and guess when it does not know to comply with the schema. Parsing still works perfectly because we keep the strong theoretical guarantees of structured generation, but now we also improved the semantic of the output. Interestingly, it also led the model to include the missing item, although this is more an indirect side effect rather than a true change in perception. The model sees the same thing, we just constrain it to interpret it differently.
 
 <details markdown="1">
-<summary>Raw output for invoice 1</summary>
+<summary>Check step 2 output for invoice 1</summary>
 
 ```json
 {
@@ -566,10 +569,17 @@ I added evaluation to make sure that the outputs were now correct. Turns out it 
 Sometimes there are additional information about the unit on the address line, usually to provide the unit number, but the model is putting these in the `city` field. This is not something I can fix with a domain rule in the schema.       
 
 <details markdown="1">
-<summary>The model mixes the unit info with the street name for invoice 2</summary>
+<summary>Check how the model mixes the unit info with the street name for invoice 2</summary>
 
 ```json
-{ "street_number": "968", "street_name": "Carr Mission Apt.", "address_line_2": "320", "city": "Bernardville", "state": "VA", "zip_code": "28211" }
+{
+    "street_number": "968",
+    "street_name": "Carr Mission Apt.",
+    "address_line_2": "320",
+    "city": "Bernardville",
+    "state": "VA",
+    "zip_code": "28211"
+}
 ```
 
 </details>
@@ -580,7 +590,7 @@ The best language models today have reasoning ability. This means they can think
 For models with native thinking, constrained decoding prevents these tokens to be picked as they are not part of the grammar. However we can trick the model into thinking about its generation, even without thinking ability, by adding a special field to our schemas with little constraints, that the model will use as a scratchpad.    
 
 <details markdown="1">
-<summary>Pydantic model with thinking field</summary>
+<summary>Check Pydantic model with thinking field</summary>
 
 ```python
 class Address(BaseModel):
@@ -610,10 +620,18 @@ class Invoice(BaseModel):
 The model was already able to see all the data, it just did not put these in the right place. Using the scratchpad and thinking field helps it to provide a more grounded answer in our case.     
 
 <details markdown="1">
-<summary>Thinking helps the model fix the address for invoice 2</summary>
+<summary>Check how thinking helps the model fix the address for invoice 2</summary>
 
 ```json
-{"thinking":"The address is 968 Carr Mission Apt. 320, Bernardville, VA 28211","street_number":"968","street_name":"Carr Mission","address_line_2":"Apt. 320","city":"Bernardville","state":"VA","zip_code":"28211"}
+{
+    "thinking":"The address is 968 Carr Mission Apt. 320, Bernardville, VA 28211",
+    "street_number":"968",
+    "street_name":"Carr Mission",
+    "address_line_2":"Apt. 320",
+    "city":"Bernardville",
+    "state":"VA",
+    "zip_code":"28211"
+}
 ```
 
 </details>
@@ -634,11 +652,11 @@ Now at least we know when something is wrong, even without a ground-truth (which
 
 ### Improvement 5: Retry mechanism
 
-Actually, there is still a last bullet we can try. Language models are surprisingly good at fixing their answers whether by reasoning or being told.    
+Actually, there is still a last bullet we can try. Language models are surprisingly good at fixing their answers whether by reasoning or being told to.    
 This is what [Instructor](https://python.useinstructor.com/concepts/) is for. On each generation, it will automatically parse the output, run the Pydantic checks and if there are any validation errors, it will include these in a prompt and send it back to the model to auto-correct itself. Of course, this comes at the cost of increased latency.      
 We can set an arbitrary number of retries. In the end, if the validation still fails, we can put failing invoices into a separate stream for additional human review.    
 
-## Conclusion
+# Conclusion
 
 In this post we have seen how to use structured generation to improve the reliability of small models. For these, prompting alone is rarely sufficient to achieve the task. Constrained decoding is a building block that gives strong theoretical guarantees on the output structure. However, it is only the first step in improving the resilience. Domain knowledge is still key and shall be integrated into the schema as much as possible before generation. It should also be used to run checks after generation. In the end, we are able to process 2 invoices out of 3 with confidence, and get helpful hints on issues for the third one.             
 All these tools enforce semantic validity in addition to structure. However, no tool may provide guarantees on correctness. For critical scenario, even samples that could be processed automatically should still be reviewed by a human.
